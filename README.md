@@ -295,3 +295,12 @@ docs/verification/pet/ 验收报告与截图
 - 没有余额/用量展示（按需求只要纯宠物功能，不做钱包）。
 - 音效是合成音，不是打包的音频文件；想要更丰富需要引入素材与授权。
 - 无头 Chromium 缺中文字体，截图里的中文会显示成方框（气泡文案本身是正确的中文，只是渲染字体缺失）。
+
+## 提交约定
+
+沿用 [Conventional Commits](https://www.conventionalcommits.org/)：`<type>(<scope>): <中文摘要>`。
+
+- `type`：`feat`（新功能）/ `fix`（修 bug）/ `docs` / `test` / `build` / `chore` / `refactor`
+- `scope`：受影响的部分，如 `host`、`client`、`panel`、`ai`、`layout`、`verify`
+- 摘要用祈使句、不加句号，控制在 50 字内；正文说明「为什么」和影响面
+- 一次提交只做一件事；改完必须跑过 `npm run check`（或等价）与对应的验收脚本
