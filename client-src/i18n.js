@@ -1,0 +1,250 @@
+/**
+ * 文案：中英双语。
+ *
+ * 这里**不**调用 `ctx.locale.register(ns, …)`：那个 API 的键集合由 DSH 自己的
+ * 类型系统在编译期校验（`LocaleNamespaceMap` 的键联合），运行时注册一个外部
+ * namespace 属于灰色地带，升级时容易因为校验变严而整块抛错。
+ * 桌宠只需要知道「当前界面是中文还是英文」，读 `ctx.locale.getSnapshot().active`
+ * 就够，剩下的字典自己管——耦合面更小，也不跟 DSH 的语言包抢命名空间。
+ */
+
+/** 字典。`{n}` / `{name}` 这类占位符由 petT 的格式化参数填充。 */
+const PET_MESSAGES = {
+  zh: {
+    // 状态气泡
+    thinking: '正在为你处理 {n} 个任务…',
+    thinkingOne: '正在处理任务…',
+    complete: '任务完成啦！',
+    completeMany: '{n} 个任务完成了',
+    alert: '有 {n} 个待审批/提问在等你',
+    alertOne: '有 1 个待审批在等你',
+    idle: '我在旁边待着～',
+    idleLines: ['喵～', '要不要休息一下？', '今天也要顺利呀', '需要我陪你吗？', '摸我会变开心哦'],
+    sleep: 'Zzz…（先眯一会儿）',
+    feedDone: '好吃！亲密度 +{n}',
+    levelUp: '升到 {level} 级啦！',
+    focusStart: '专注 {n} 分钟，我陪着你',
+    focusTick: '还剩 {n} 分钟',
+    focusDone: '专注完成，起来动一下！',
+    focusBreakDone: '休息结束，继续吧',
+    // 菜单
+    menuFeed: '喂食',
+    menuPet: '摸摸',
+    menuFocus: '开始专注',
+    menuFocusStop: '结束专注',
+    menuHide: '隐藏 5 分钟',
+    menuSleep: '去睡觉',
+    menuWake: '叫醒',
+    menuSettings: '宠物设置',
+    sectionActions: '动作',
+    sectionOutfit: '装扮',
+    outfitDesc: '给噜噜戴点东西：围巾、帽子、眼镜都行，随时可换。',
+    outfitNone: '不戴',
+    menuOutfit: '换装扮',
+    actionsDesc: '点一下让宠物表演（右键菜单里也能点播）',
+    actionPlay: '表演',
+    menuResetPos: '回到角落',
+    // 气泡里的按钮
+    openSession: '去看看',
+    dismiss: '知道啦',
+    // 设置页
+    settingsTitle: '宠物',
+    // 活动流 / 上下文 / 日记 / 图集
+    titlePending: '待审批',
+    titlePendingMany: '{n} 个待审批',
+    usageWarn: '上下文用了 {n}%，我有点跟不上了',
+    usageHigh: '上下文快满了（{n}%），该开个新会话了',
+    nudgeAsk: '陪我玩一会儿？',
+    sectionLive: '活动与预警',
+    liveDesc: '工具级状态、回合汇报、上下文占用（host 半需重启 DSH 后生效）',
+    liveFeedLabel: '工具级状态',
+    liveFeedDesc: '开着时宠物会显示正在跑哪个工具、这一轮用了多久；关掉只保留「在跑 / 等你审批」这类会话级状态。',
+    usageWarnLabel: '上下文预警阈值',
+    liveOnline: '活动流已连接',
+    liveOffline: '活动流未连接（重启 DSH 后可用）',
+    sectionDiary: '每日日记',
+    diaryDesc: '今天跑了多少轮、用了哪些工具',
+    diaryRefresh: '刷新',
+    diaryEmpty: '今天还没有记录',
+    sectionSkins: '自定义图集',
+    skinsDesc: '导入 Codex 格式图集：8 列，单格 192×208，PNG 或 WebP',
+    skinsImport: '选择图集文件',
+    skinsRemove: '删除',
+    skinsApplied: '已导入并切换',
+    skinsFailed: '导入失败：{msg}',
+    sectionAppearance: '外观',
+    sectionBehaviour: '行为',
+    sectionGrowth: '养成',
+    enable: '显示宠物',
+    enableDesc: '关掉后立即从页面移除，设置保留',
+    character: '形象',
+    size: '大小',
+    sizeSmall: '小',
+    sizeMedium: '中',
+    sizeLarge: '大',
+    sizeHuge: '超大',
+    sound: '音效',
+    soundDesc: '点击、完成、待审批时发出轻响（WebAudio 合成）',
+    volume: '音量',
+    motion: '动画',
+    motionAuto: '跟随系统',
+    motionOff: '关闭动画',
+    motionDesc: '关闭后只剩淡入淡出，适合低性能设备或专注时使用',
+    mobile: '手机端',
+    mobileHide: '不显示',
+    mobileShow: '显示',
+    notify: '任务提醒',
+    notifyDesc: '运行中/完成/待审批时弹气泡；点击可直接跳到会话',
+    bubbleSeconds: '气泡停留',
+    sleepAfter: '多久后打瞌睡',
+    minutes: '{n} 分钟',
+    focusWork: '专注时长',
+    focusBreak: '休息时长',
+    affinity: '亲密度',
+    level: '等级',
+    tasks: '完成任务',
+    focusCount: '专注次数',
+    streak: '连续天数',
+    exportData: '导出数据',
+    importData: '导入数据',
+    resetGrowth: '清空养成',
+    resetAll: '恢复默认设置',
+    importPrompt: '把之前导出的 JSON 粘贴到这里',
+    importOk: '导入成功',
+    importFail: '导入失败：内容不是有效的宠物数据',
+    resetDone: '已重置',
+    copied: '已复制到剪贴板',
+    disabledHint: '宠物当前被关闭，可在设置 → 宠物里重新打开',
+  },
+  en: {
+    thinking: 'Working on {n} tasks…',
+    thinkingOne: 'Working on a task…',
+    complete: 'Task done!',
+    completeMany: '{n} tasks done',
+    alert: '{n} approvals waiting for you',
+    alertOne: '1 approval waiting for you',
+    idle: 'Just hanging out~',
+    idleLines: ['Meow~', 'Take a break?', 'Have a good day!', 'Want some company?', 'Pet me and I cheer up'],
+    sleep: 'Zzz… (napping)',
+    feedDone: 'Yum! Bond +{n}',
+    levelUp: 'Level {level}!',
+    focusStart: 'Focusing {n} min, I will keep you company',
+    focusTick: '{n} min left',
+    focusDone: 'Focus done — stand up and stretch!',
+    focusBreakDone: 'Break over, back to it',
+    menuFeed: 'Feed',
+    menuPet: 'Pet',
+    menuFocus: 'Start focus',
+    menuFocusStop: 'Stop focus',
+    menuHide: 'Hide for 5 min',
+    menuSleep: 'Go to sleep',
+    menuWake: 'Wake up',
+    menuSettings: 'Pet settings',
+    sectionActions: 'Actions',
+    sectionOutfit: 'Outfit',
+    outfitDesc: 'Dress Lulu up: scarf, hat, glasses — switch any time.',
+    outfitNone: 'None',
+    menuOutfit: 'Change outfit',
+    actionsDesc: 'Click to make the pet perform (also available in the right-click menu)',
+    actionPlay: 'Play',
+    menuResetPos: 'Back to corner',
+    openSession: 'Take a look',
+    dismiss: 'Got it',
+    settingsTitle: 'Pet',
+    titlePending: 'Approval needed',
+    titlePendingMany: '{n} approvals needed',
+    usageWarn: 'Context at {n}% — I am losing track',
+    usageHigh: 'Context nearly full ({n}%) — start a new session',
+    nudgeAsk: 'Play with me?',
+    sectionLive: 'Activity & alerts',
+    liveDesc: 'Tool-level status, turn reports, context pressure (host half needs a DSH restart)',
+    liveFeedLabel: 'Tool-level state',
+    liveFeedDesc: 'When on, the pet shows which tool is running and how long the turn took. Off keeps only session-level states (running / awaiting approval).',
+    usageWarnLabel: 'Context warning threshold',
+    liveOnline: 'Activity feed connected',
+    liveOffline: 'Activity feed offline (restart DSH to enable)',
+    sectionDiary: 'Daily diary',
+    diaryDesc: 'Turns and tools from today',
+    diaryRefresh: 'Refresh',
+    diaryEmpty: 'Nothing recorded today',
+    sectionSkins: 'Custom sprite sheets',
+    skinsDesc: 'Codex format: 8 columns, 192x208 per frame, PNG or WebP',
+    skinsImport: 'Choose sprite sheet',
+    skinsRemove: 'Remove',
+    skinsApplied: 'Imported and applied',
+    skinsFailed: 'Import failed: {msg}',
+    sectionAppearance: 'Appearance',
+    sectionBehaviour: 'Behaviour',
+    sectionGrowth: 'Growth',
+    enable: 'Show pet',
+    enableDesc: 'Removes the pet from the page immediately; settings are kept',
+    character: 'Character',
+    size: 'Size',
+    sizeSmall: 'Small',
+    sizeMedium: 'Medium',
+    sizeLarge: 'Large',
+    sizeHuge: 'Huge',
+    sound: 'Sound',
+    soundDesc: 'Soft blips on click, completion and approvals (synthesised via WebAudio)',
+    volume: 'Volume',
+    motion: 'Animation',
+    motionAuto: 'Follow system',
+    motionOff: 'Off',
+    motionDesc: 'Off keeps only fades — for low-end devices or deep focus',
+    mobile: 'On phones',
+    mobileHide: 'Hidden',
+    mobileShow: 'Shown',
+    notify: 'Task reminders',
+    notifyDesc: 'Bubbles on running / done / approval; click to jump to the session',
+    bubbleSeconds: 'Bubble linger',
+    sleepAfter: 'Nap after',
+    minutes: '{n} min',
+    focusWork: 'Focus length',
+    focusBreak: 'Break length',
+    affinity: 'Bond',
+    level: 'Level',
+    tasks: 'Tasks done',
+    focusCount: 'Focus sessions',
+    streak: 'Streak days',
+    exportData: 'Export data',
+    importData: 'Import data',
+    resetGrowth: 'Reset growth',
+    resetAll: 'Restore defaults',
+    importPrompt: 'Paste the JSON you exported earlier',
+    importOk: 'Imported',
+    importFail: 'Import failed: not valid pet data',
+    resetDone: 'Reset',
+    copied: 'Copied to clipboard',
+    disabledHint: 'The pet is hidden — re-enable it in Settings → Pet',
+  },
+}
+
+/**
+ * 取翻译函数。
+ *
+ * @param {string} lang `zh` / `en`（其它语言回落英文，与 DSH 语言包策略一致）
+ * @returns {(key: string, vars?: Record<string, string|number>) => string}
+ */
+function petTranslator(lang) {
+  const dict = PET_MESSAGES[lang] ?? PET_MESSAGES.en
+  const fallback = PET_MESSAGES.en
+  return function t(key, vars) {
+    const template = dict[key] ?? fallback[key] ?? key
+    if (typeof template !== 'string') return key
+    if (!vars) return template
+    return template.replace(/\{(\w+)\}/g, (match, name) =>
+      Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match,
+    )
+  }
+}
+
+/** 从 DSH locale 快照里取当前语言；取不到就当英文。 */
+function petLocaleLang(locale) {
+  try {
+    const active = locale?.getSnapshot?.()?.active
+    if (typeof active === 'string' && active.startsWith('zh')) return 'zh'
+    return 'en'
+  } catch {
+    return 'en'
+  }
+}

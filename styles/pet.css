@@ -1,0 +1,2156 @@
+/* dsh-pet — 宠物样式
+ *
+ * 设计约束（每条都有理由，改之前先读一遍）：
+ *
+ * 1. **只用官方 --dsw-* token 做「界面件」**（气泡、菜单、按钮、阴影、圆角、文字色），
+ *    这样换主题 / 切深色 / 用户自定字号时宠物不会变成一处突兀的异色块。
+ *    宠物本体（角色颜色）用 --pet-c1..c4，由 JS 按角色注入，不进全局 token 命名空间。
+ * 2. **不覆盖任何全局选择器**：所有规则都以 .dsh-pet-* / [data-dsh-pet] 开头，
+ *    绝不写 `:root`、`body` 的裸选择器——否则升级后 DSH 换布局就会被我们压住。
+ * 3. **动画只用 transform / opacity**：桌宠常驻页面，任何触发布局的动画都会让
+ *    滚动和输入卡顿；所有 loop 动画都在合成层完成。
+ * 4. **尊重 reduced motion**：系统偏好或设置里关掉动画时，只剩 0.2s 的淡入淡出。
+ * 5. **移动端默认不显示**：小屏上桌宠是干扰，设置里可以显式打开。
+ */
+
+[data-dsh-pet] {
+  /* 宠物尺寸（设置里可调），悬停/拖拽只改 --pet-scale，不改布局参数 */
+  --pet-size: 104px;
+  --pet-scale: 1;
+  /* 动作表演时长，由 JS 按动作写内联；这里给个默认值，构建期的 token 校验要看到定义 */
+  --pet-act-ms: 1600ms;
+  /* 上下文占用（0–1），由 JS 按 /pet/activity 的 usage.percent 写内联 */
+  --pet-usage: 0;
+
+  position: fixed;
+  z-index: 40; /* 低于菜单/对话框，高于正文 */
+  width: var(--pet-size);
+  height: var(--pet-size);
+  pointer-events: none; /* 容器不挡点击，只有本体/气泡/菜单接收事件 */
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+  contain: layout style;
+}
+
+/* 位置的两种落点：右下角（默认）与左下角（吸附后），由 JS 写 data-dock */
+[data-dsh-pet][data-dock='right'] {
+  right: calc(18px + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--pet-bottom, 92px) + env(safe-area-inset-bottom, 0px));
+}
+
+[data-dsh-pet][data-dock='left'] {
+  left: calc(18px + env(safe-area-inset-left, 0px));
+  bottom: calc(var(--pet-bottom, 92px) + env(safe-area-inset-bottom, 0px));
+}
+
+/* 自由拖拽位置：JS 写 left/top，并清掉 data-dock 的锚点 */
+[data-dsh-pet][data-dock='free'] {
+  right: auto;
+  bottom: auto;
+}
+
+/* ── 本体 ───────────────────────────────────────────────────────────── */
+
+.dsh-pet-figure {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform: scale(var(--pet-scale));
+  transform-origin: 50% 100%;
+  pointer-events: auto;
+  cursor: grab;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms ease-out;
+}
+
+[data-dsh-pet][data-state='drag'] .dsh-pet-figure {
+  cursor: grabbing;
+  transform: scale(calc(var(--pet-scale) * 1.06));
+}
+
+.dsh-pet-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 12%));
+}
+
+/* ── 位图形象（spritesheet）─────────────────────────────────────────────
+ * 图集单格 192×208，8 列 × 11 行；每帧用 background-position 在未缩放的 192×208
+ * 画布上取格，再由 transform 缩到 --pet-size 高。缩放走 transform 而不是
+ * background-size，是为了避免每换一档尺寸都要重算 background-position 的小数。
+ * keyframes 由 characters.js 的 petSpriteCss() 在运行时注入（动画表只有一份）。
+ */
+[data-dsh-pet] {
+  --pet-sprite-scale: 0.5;
+  --pet-anim-scale: 0.5;
+}
+
+.dsh-pet-sprite {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 192px;
+  height: 208px;
+  margin-left: -96px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  /* 8 列 × 11 行的图集：把整张图缩放到元素盒的 800%×1100%，一格正好等于一个元素盒，
+   * 换帧就是平移 background-position（见 characters.js 的 petSpriteCss）。 */
+  background-size: 800% 1100%;
+  transform: scale(var(--pet-sprite-scale));
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 16%));
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+/* 位图角色本体：脚下留一点点空，气泡和进度环仍按方块定位 */
+[data-dsh-pet][data-char='lulu'] .dsh-pet-figure {
+  cursor: grab;
+}
+
+[data-dsh-pet][data-motion='off'] .dsh-pet-sprite {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-pet] .dsh-pet-sprite {
+    animation-play-state: paused;
+  }
+}
+
+/* 设置页卡片里的位图缩略图：取图集第一格（background-size 用 800%×1100% 表示 8 列 × 11 行） */
+.dsh-pet-sprite-thumb {
+  display: block;
+  width: 40px;
+  aspect-ratio: 192 / 208;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 800% 1100%;
+}
+
+/* 动图形象：一张横向胶片条，CSS 逐帧推 background-position（帧宽高由导入脚本写进内联规则） */
+.dsh-pet-anim {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  transform: scale(var(--pet-anim-scale));
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 16%));
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+
+[data-dsh-pet][data-motion='off'] .dsh-pet-anim {
+  animation-play-state: paused;
+}
+
+.dsh-pet-anim-thumb {
+  display: block;
+  width: 40px;
+  height: auto;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-pet] .dsh-pet-anim {
+    animation-play-state: paused;
+  }
+}
+
+/* 角色配色：--pet-c1 身体 / --pet-c2 肚皮 / --pet-c3 点缀（脸颊、耳朵内侧） /
+ * --pet-c4 五官线条。深浅色主题由角色自己对同一 token 组微调。 */
+.dsh-pet-body {
+  fill: var(--pet-c1);
+}
+
+.dsh-pet-belly {
+  fill: var(--pet-c2);
+}
+
+.dsh-pet-accent {
+  fill: var(--pet-c3);
+}
+
+.dsh-pet-line {
+  fill: var(--pet-c4);
+}
+
+.dsh-pet-eyewhite {
+  fill: var(--pet-eye-white, #fff);
+}
+
+.dsh-pet-glint {
+  fill: #fff;
+}
+
+.dsh-pet-cheek {
+  opacity: 0.55;
+}
+
+.dsh-pet-mouth {
+  fill: none;
+  stroke: var(--pet-c4);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+/* 水豚的大鼻子：点缀色和肚皮色对半调，太橙会像围兜 */
+.dsh-pet-muzzle {
+  fill: var(--pet-c2);
+  fill: color-mix(in srgb, var(--pet-c3) 42%, var(--pet-c2));
+  stroke: color-mix(in srgb, var(--pet-c3) 55%, var(--pet-c2));
+  stroke-width: 0.9;
+  stroke-opacity: 0.55;
+}
+
+.dsh-pet-nostril {
+  fill: var(--pet-c4);
+  opacity: 0.55;
+}
+
+/* 头上小橘子的梗和叶子（叶子固定绿，不随角色配色漂移） */
+.dsh-pet-hat-stem {
+  fill: none;
+  stroke: var(--pet-c4);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.dsh-pet-leaf {
+  fill: #7aa85a;
+}
+
+body[data-ds-dark-theme] .dsh-pet-leaf {
+  fill: #5f8a45;
+}
+
+.dsh-pet-hat-shine {
+  fill: #fff;
+  opacity: 0.35;
+}
+
+/* 短裤的中缝，避免整块橙色看不出腿 */
+.dsh-pet-shorts-line {
+  fill: none;
+  stroke: rgb(0 0 0 / 18%);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+/* 瞳孔跟随光标：偏移量由 overlay 写在宿主的 --pet-look-x/y 上（单位 = SVG 用户单位） */
+.dsh-pet-pupil {
+  transform: translate(var(--pet-look-x, 0px), var(--pet-look-y, 0px));
+  transition: transform 140ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.dsh-pet-glint {
+  transform: translate(calc(var(--pet-look-x, 0px) * 0.7), calc(var(--pet-look-y, 0px) * 0.7));
+  transition: transform 140ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+[data-dsh-pet][data-motion='off'] .dsh-pet-pupil,
+[data-dsh-pet][data-motion='off'] .dsh-pet-glint {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-pet-pupil,
+  .dsh-pet-glint {
+    transition: none;
+  }
+}
+
+/* 状态叠加件的描边/填充：感叹号三角、爱心、Zzz、思考点都跟着角色配色走 */
+.dsh-pet-alert-mark {
+  fill: var(--dsw-alias-state-warn-primary, #f59e0b);
+}
+
+.dsh-pet-alert-glyph,
+.dsh-pet-alert-glyph-dot {
+  fill: #fff;
+  stroke: #fff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.dsh-pet-heart {
+  fill: var(--dsw-alias-state-error-primary, #e5484d);
+  opacity: 0.9;
+}
+
+.dsh-pet-heart-2 {
+  opacity: 0.6;
+}
+
+.dsh-pet-z {
+  fill: var(--pet-c4);
+  font-weight: 700;
+  font-family: inherit;
+  opacity: 0.75;
+}
+
+.dsh-pet-think-dot {
+  fill: var(--pet-c3);
+}
+
+.dsh-pet-shadow {
+  fill: rgb(0 0 0 / 10%);
+}
+
+/* ── 角色配色 ────────────────────────────────────────────────────────
+ * 颜色挂在宿主元素的 data-char 上而不是 SVG 内联：
+ *   · 切深色主题时不用 JS 重绘 SVG；
+ *   · 设置页的预览与页面上的宠物共用同一条规则，不会「预览和实际不一样」。
+ * 取值见 client-src/characters.js 的 palette / paletteDark（那里是唯一事实来源，
+ * test 会做一致性校验，避免两边漂移）。 */
+
+[data-char='mochi'] {
+  --pet-c1: #f7dcae;
+  --pet-c2: #fff6e4;
+  --pet-c3: #f3b0a6;
+  --pet-c4: #4a3a2c;
+  --pet-eye-white: #fffdf8;
+}
+
+[data-char='pengu'] {
+  --pet-c1: #5f6b7d;
+  --pet-c2: #f4f6f9;
+  --pet-c3: #f0b24b;
+  --pet-c4: #252c38;
+  --pet-eye-white: #ffffff;
+}
+
+[data-char='ember'] {
+  --pet-c1: #f0a05a;
+  --pet-c2: #fde7cd;
+  --pet-c3: #e8755f;
+  --pet-c4: #4a2f22;
+  --pet-eye-white: #fffaf3;
+}
+
+body[data-ds-dark-theme] [data-char='mochi'] {
+  --pet-c1: #c9a978;
+  --pet-c2: #efe0c6;
+  --pet-c3: #d98d84;
+  --pet-c4: #2a2119;
+  --pet-eye-white: #fdf8ee;
+}
+
+body[data-ds-dark-theme] [data-char='pengu'] {
+  --pet-c1: #414a59;
+  --pet-c2: #dfe4ec;
+  --pet-c3: #e2a340;
+  --pet-c4: #171c24;
+  --pet-eye-white: #ffffff;
+}
+
+body[data-ds-dark-theme] [data-char='ember'] {
+  --pet-c1: #c47c3e;
+  --pet-c2: #f3d9bb;
+  --pet-c3: #cf5f4c;
+  --pet-c4: #2d1c14;
+  --pet-eye-white: #fff8ef;
+}
+
+/* ── 循环动画（全部合成层） ──────────────────────────────────────────── */
+
+.dsh-pet-breathe {
+  transform-origin: 50% 100%;
+  animation: dsh-pet-breathe 3.4s ease-in-out infinite;
+}
+
+.dsh-pet-blink {
+  transform-origin: 50% 50%;
+  animation: dsh-pet-blink 5.2s ease-in-out infinite;
+}
+
+.dsh-pet-tail {
+  transform-origin: 20% 80%;
+  animation: dsh-pet-tail 2.8s ease-in-out infinite;
+}
+
+@keyframes dsh-pet-breathe {
+  0%,
+  100% {
+    transform: scaleY(1) translateY(0);
+  }
+  50% {
+    transform: scaleY(0.965) translateY(1.5px);
+  }
+}
+
+@keyframes dsh-pet-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95%,
+  97% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes dsh-pet-tail {
+  0%,
+  100% {
+    transform: rotate(-6deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
+@keyframes dsh-pet-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes dsh-pet-jump {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+  12% {
+    transform: translateY(2px) scaleY(0.92);
+  }
+  45% {
+    transform: translateY(-16px) scaleY(1.04);
+  }
+  78% {
+    transform: translateY(0) scaleY(0.96);
+  }
+}
+
+@keyframes dsh-pet-shake {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+  80% {
+    transform: rotate(-2deg);
+  }
+}
+
+/* ── 状态 ───────────────────────────────────────────────────────────── */
+
+/* thinking：运行中的任务，本体轻轻上下浮动，头顶三颗思考点 */
+[data-dsh-pet][data-state='thinking'] .dsh-pet-breathe {
+  animation:
+    dsh-pet-breathe 1.6s ease-in-out infinite,
+    dsh-pet-bob 1.6s ease-in-out infinite;
+}
+
+.dsh-pet-think {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+
+[data-dsh-pet][data-state='thinking'] .dsh-pet-think,
+[data-dsh-pet][data-state='think-deep'] .dsh-pet-think {
+  opacity: 1;
+}
+
+.dsh-pet-think-dot {
+  animation: dsh-pet-think-dot 1.2s ease-in-out infinite;
+}
+
+.dsh-pet-think-dot:nth-of-type(2) {
+  animation-delay: 0.18s;
+}
+
+.dsh-pet-think-dot:nth-of-type(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes dsh-pet-think-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2.5px);
+  }
+}
+
+/* alert：有审批/提问等你处理，本体抖动并冒感叹号 */
+[data-dsh-pet][data-state='alert'] .dsh-pet-breathe {
+  animation: dsh-pet-shake 0.9s ease-in-out infinite;
+}
+
+.dsh-pet-alert {
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+[data-dsh-pet][data-state='alert'] .dsh-pet-alert {
+  opacity: 1;
+}
+
+/* celebrate：任务刚完成，跳一下冒爱心 */
+.dsh-pet-celebrate {
+  opacity: 0;
+  transform-origin: 50% 100%;
+}
+
+[data-dsh-pet][data-state='celebrate'] .dsh-pet-celebrate {
+  opacity: 1;
+  animation: dsh-pet-jump 720ms cubic-bezier(0.3, 1.4, 0.4, 1) 2;
+}
+
+/* happy：被摸/被喂食，短暂冒爱心并下压 */
+[data-dsh-pet][data-state='happy'] .dsh-pet-breathe {
+  animation: dsh-pet-bob 0.5s ease-in-out 2;
+}
+
+.dsh-pet-happy {
+  opacity: 0;
+}
+
+[data-dsh-pet][data-state='happy'] .dsh-pet-happy,
+[data-dsh-pet][data-state='celebrate'] .dsh-pet-happy {
+  opacity: 1;
+}
+
+/* sleeping：长时间没有任务，闭眼 + Zzz */
+[data-dsh-pet][data-state='sleep'] .dsh-pet-breathe {
+  animation-duration: 5.6s;
+}
+
+[data-dsh-pet][data-state='sleep'] .dsh-pet-blink {
+  animation: none;
+  transform: scaleY(0.08);
+}
+
+.dsh-pet-zzz {
+  opacity: 0;
+}
+
+[data-dsh-pet][data-state='sleep'] .dsh-pet-zzz {
+  opacity: 1;
+}
+
+[data-dsh-pet][data-state='sleep'] .dsh-pet-zzz > * {
+  animation: dsh-pet-zzz 2.6s ease-in-out infinite;
+}
+
+[data-dsh-pet][data-state='sleep'] .dsh-pet-zzz > :nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+[data-dsh-pet][data-state='sleep'] .dsh-pet-zzz > :nth-child(3) {
+  animation-delay: 1s;
+}
+
+@keyframes dsh-pet-zzz {
+  0% {
+    opacity: 0.2;
+    transform: translate(0, 2px);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.2;
+    transform: translate(3px, -5px);
+  }
+}
+
+/* focus：番茄钟进行中，本体底下一圈进度环 */
+.dsh-pet-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+  background: conic-gradient(
+    var(--dsw-alias-brand-primary-new-colorprimary-new-color, #4176e6) calc(var(--pet-progress, 0) * 360deg),
+    transparent 0
+  );
+  mask: radial-gradient(closest-side, transparent 86%, #000 88%);
+  -webkit-mask: radial-gradient(closest-side, transparent 86%, #000 88%);
+}
+
+[data-dsh-pet][data-state='focus'] .dsh-pet-ring {
+  opacity: 0.7;
+}
+
+/* ── 气泡 ───────────────────────────────────────────────────────────── */
+
+.dsh-pet-bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  min-width: 84px;
+  max-width: 236px;
+  padding: 7px 10px;
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-2, #fff);
+  color: var(--dsw-alias-label-primary, #16181d);
+  border: 1px solid var(--dsw-alias-border-l1, rgb(0 0 0 / 8%));
+  box-shadow: var(--dsw-shadow-lv2, 0 4px 12px rgb(0 0 0 / 12%));
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  transform: translate(-50%, 4px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+[data-dsh-pet][data-bubble='show'] .dsh-pet-bubble {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+/* 气泡尾巴：用两个伪元素叠出边框色 + 背景色 */
+.dsh-pet-bubble::after,
+.dsh-pet-bubble::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  border: 6px solid transparent;
+  transform: translateX(-50%);
+}
+
+.dsh-pet-bubble::before {
+  border-top-color: var(--dsw-alias-border-l1, rgb(0 0 0 / 8%));
+  margin-top: 1px;
+}
+
+.dsh-pet-bubble::after {
+  border-top-color: var(--dsw-alias-bg-layer-2, #fff);
+}
+
+.dsh-pet-bubble-rec {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.dsh-pet-bubble-note {
+  color: var(--dsw-alias-label-secondary, #6b7280);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+/* 气泡里的小按钮，只在本 bubble 内生效 */
+.dsh-pet-btn {
+  appearance: none;
+  border: 1px solid var(--dsw-alias-border-l1, rgb(0 0 0 / 10%));
+  background: var(--dsw-alias-bg-layer-2, #fff);
+  color: var(--dsw-alias-label-primary, #16181d);
+  border-radius: var(--dsw-radius-sm, 8px);
+  padding: 2px 7px;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dsh-pet-btn:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgb(0 0 0 / 4%));
+}
+
+.dsh-pet-btn[data-tone='primary'] {
+  background: var(--dsw-alias-button-primary-fill, #4176e6);
+  border-color: transparent;
+  color: #fff;
+}
+
+.dsh-pet-btn[data-tone='primary']:hover {
+  filter: brightness(1.06);
+}
+
+/* ── 未读徽标 ───────────────────────────────────────────────────────── */
+
+.dsh-pet-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-warn-primary, #f59e0b);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 20%);
+  display: none;
+}
+
+[data-dsh-pet][data-badge='show'] .dsh-pet-badge {
+  display: block;
+}
+
+/* ── 上下文占用条 ───────────────────────────────────────────────────── */
+
+/*
+ * 只在占用跨过预警阈值时出现：一条 3px 的细线贴着宠物底部。
+ * 平时不显示 —— 桌宠是陪伴物，不是仪表盘。
+ */
+.dsh-pet-usage {
+  position: absolute;
+  left: 22%;
+  bottom: 2px;
+  width: 56%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-3, #e5e7eb);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.dsh-pet-usage::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: calc(var(--pet-usage) * 100%);
+  border-radius: inherit;
+  background: var(--dsw-alias-state-warn-primary, #f59e0b);
+  transition: width 0.3s ease;
+}
+
+.dsh-pet-usage[data-visible='show'] {
+  opacity: 0.9;
+}
+
+[data-dsh-pet][data-usage='high'] .dsh-pet-usage::after {
+  background: var(--dsw-alias-state-error-primary, #ef4444);
+}
+
+[data-dsh-pet][data-live='off'] .dsh-pet-usage {
+  opacity: 0;
+}
+
+/* ── 右键菜单 ───────────────────────────────────────────────────────── */
+
+.dsh-pet-menu {
+  /* 位置由 overlay.js 的 placeMenu() 按视口算（left/top/max-width 内联），
+   * 不能再用 bottom/right 贴边推 —— 宠物在右上角时会被屏幕顶边裁掉。 */
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* max-height 得含 padding/border，否则菜单会比视口高出 10px（border-box） */
+  box-sizing: border-box;
+  min-width: 158px;
+  /* 动作点播加进来之后条目变多：限高 + 滚动，别把菜单顶到屏幕外 */
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-2, #fff);
+  border: 1px solid var(--dsw-alias-border-l1, rgb(0 0 0 / 8%));
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 32px rgb(0 0 0 / 14%));
+  display: none;
+  pointer-events: auto;
+}
+
+[data-dsh-pet][data-menu='open'] .dsh-pet-menu {
+  display: block;
+}
+
+.dsh-pet-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #16181d);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dsh-pet-menu-item:hover,
+.dsh-pet-menu-item:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover, rgb(0 0 0 / 5%));
+  outline: none;
+}
+
+.dsh-pet-menu-item[data-danger='true'] {
+  color: var(--dsw-alias-state-error-primary, #e5484d);
+}
+
+.dsh-pet-menu-head {
+  padding: 6px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-secondary, rgb(0 0 0 / 45%));
+}
+
+.dsh-pet-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--dsw-alias-border-l1, rgb(0 0 0 / 8%));
+}
+
+/* ── 深色主题 ────────────────────────────────────────────────────────
+ * 深色下官方 token 已自动跟随；这里只处理「我们自己画的东西」：
+ * 落影更淡、光环更亮、徽标文字更实。选择器带上 body 前缀以匹配官方特异性。 */
+
+body[data-ds-dark-theme] .dsh-pet-svg {
+  filter: drop-shadow(0 2px 8px rgb(0 0 0 / 42%));
+}
+
+body[data-ds-dark-theme] .dsh-pet-shadow {
+  fill: rgb(0 0 0 / 34%);
+}
+
+/* ── 减少动效 ────────────────────────────────────────────────────────
+ * 系统偏好与插件设置走同一个开关：JS 会给 root 写 data-motion="off"。 */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-pet] .dsh-pet-figure,
+  [data-dsh-pet] .dsh-pet-bubble {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+[data-dsh-pet][data-motion='off'] .dsh-pet-breathe,
+[data-dsh-pet][data-motion='off'] .dsh-pet-blink,
+[data-dsh-pet][data-motion='off'] .dsh-pet-tail,
+[data-dsh-pet][data-motion='off'] .dsh-pet-celebrate,
+[data-dsh-pet][data-motion='off'] .dsh-pet-think-dot,
+[data-dsh-pet][data-motion='off'] .dsh-pet-zzz > * {
+  animation: none !important;
+}
+
+[data-dsh-pet][data-motion='off'] .dsh-pet-figure,
+[data-dsh-pet][data-motion='off'] .dsh-pet-bubble,
+[data-dsh-pet][data-motion='off'] .dsh-pet-ring {
+  transition-duration: 0.01ms !important;
+}
+
+/* ── 移动端 ──────────────────────────────────────────────────────────
+ * 默认不显示；设置里打开后缩小一号，并贴到安全区上方，避开输入框。 */
+
+@media (max-width: 1023px) {
+  [data-dsh-pet]:not([data-mobile='show']) {
+    display: none;
+  }
+
+  [data-dsh-pet][data-mobile='show'] {
+    --pet-size: 76px;
+    --pet-bottom: 76px;
+  }
+
+  [data-dsh-pet][data-mobile='show'] .dsh-pet-bubble {
+    max-width: 180px;
+  }
+}
+
+/* ── 就地设置浮层 ────────────────────────────────────────────────────
+ * 右键菜单 →「宠物设置」弹这个，不强迫用户进设置对话框；内容与
+ * settings.section 是同一个 React 组件。 */
+
+.dsh-pet-popover {
+  position: fixed;
+  z-index: 70;
+  right: calc(18px + env(safe-area-inset-right, 0px));
+  bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(72vh, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--dsw-radius-lg, 16px);
+  background: var(--dsw-alias-bg-layer-2, #fff);
+  color: var(--dsw-alias-label-primary, #16181d);
+  border: 1px solid var(--dsw-alias-border-l1, rgb(0 0 0 / 8%));
+  box-shadow: var(--dsw-shadow-lv3, 0 12px 32px rgb(0 0 0 / 14%));
+  pointer-events: auto;
+}
+
+.dsh-pet-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.dsh-pet-popover-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+@media (max-width: 1023px) {
+  .dsh-pet-popover {
+    left: 12px;
+    right: 12px;
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+  }
+}
+
+/* ── 设置页 ──────────────────────────────────────────────────────────
+ * 设置面板本身用原生控件，只借官方 token 上色，保证与 DSH 设置页一致。 */
+
+.dsh-pet-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, #16181d);
+}
+
+.dsh-pet-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dsh-pet-settings-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dsh-pet-settings-desc {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+}
+
+.dsh-pet-settings select,
+.dsh-pet-settings input[type='range'] {
+  accent-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color, #4176e6);
+}
+
+.dsh-pet-settings select {
+  padding: 4px 8px;
+  border-radius: var(--dsw-radius-sm, 8px);
+  border: 1px solid var(--dsw-alias-border-l1, rgb(0 0 0 / 12%));
+  background: var(--dsw-alias-bg-layer-2, #fff);
+  color: inherit;
+}
+
+.dsh-pet-settings input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color, #4176e6);
+}
+
+.dsh-pet-settings-chars {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dsh-pet-settings-char {
+  position: relative;
+  width: 72px;
+  padding: 6px 4px 4px;
+  border-radius: var(--dsw-radius-md, 12px);
+  border: 1px solid var(--dsw-alias-border-l1, rgb(0 0 0 / 10%));
+  background: var(--dsw-alias-bg-layer-2, #fff);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: inherit;
+}
+
+.dsh-pet-settings-char[data-active='true'] {
+  border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color, #4176e6);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color, #4176e6) 22%, transparent);
+}
+
+.dsh-pet-settings-char svg {
+  width: 44px;
+  height: 44px;
+}
+
+.dsh-pet-settings-char .dsh-pet-sprite-thumb {
+  width: 44px;
+}
+
+.dsh-pet-settings-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.dsh-pet-settings-stat {
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-interactive-bg-hover, rgb(0 0 0 / 4%));
+}
+
+.dsh-pet-settings-stat b {
+  display: block;
+  font-size: 16px;
+  line-height: 1.3;
+}
+
+.dsh-pet-settings-stat span {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #6b7280);
+}
+
+.dsh-pet-settings-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── 动作表演 ──────────────────────────────────────────────────────────
+ * 根元素上挂 data-act='<effect>'，用 rotate / translate / scale 三个独立属性做动画，
+ * 不动 transform —— transform 已经被 --pet-scale（悬停、拖拽放大）占着，
+ * 两者混用会互相覆盖。粒子层是 root 的子节点，跟着一起动，看起来像从宠物身上炸开。
+ */
+
+.dsh-pet-fx {
+  position: absolute;
+  left: 50%;
+  bottom: 42%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.dsh-pet-fx-item {
+  --pet-fx-dx: 0px;
+  --pet-fx-dy: -40px;
+  --pet-fx-rot: 0deg;
+  --pet-fx-delay: 0ms;
+  --pet-fx-size: 8px;
+  --pet-fx-color: var(--dsw-alias-brand-primary, #3b6fe0);
+
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--pet-fx-size);
+  height: var(--pet-fx-size);
+  border-radius: 999px;
+  background: var(--pet-fx-color);
+  color: var(--pet-fx-color);
+  font-size: var(--pet-fx-size);
+  line-height: 1;
+  opacity: 0;
+  animation: dsh-pet-fx-fly 900ms cubic-bezier(0.22, 0.68, 0.35, 1) var(--pet-fx-delay) both;
+}
+
+/* 带文字的粒子（🧧 / ✦ / 福）不画圆点，只显示字符 */
+.dsh-pet-fx-item:not(:empty) {
+  background: transparent;
+  border-radius: 0;
+}
+
+@keyframes dsh-pet-fx-fly {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+    rotate: 0deg;
+    scale: 0.4;
+  }
+  18% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: var(--pet-fx-dx) var(--pet-fx-dy);
+    rotate: var(--pet-fx-rot);
+    scale: 1;
+  }
+}
+
+/* 拜年：躬身两次 */
+[data-dsh-pet][data-act='bow'] {
+  animation: dsh-pet-act-bow var(--pet-act-ms, 2200ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-bow {
+  0%, 100% { rotate: 0deg; translate: 0 0; }
+  18% { rotate: -12deg; translate: 0 3px; }
+  34% { rotate: 0deg; translate: 0 0; }
+  52% { rotate: -12deg; translate: 0 3px; }
+  70% { rotate: 0deg; translate: 0 0; }
+}
+
+/* 舞狮：上下弹跳 + 左右甩头 */
+[data-dsh-pet][data-act='lion'] {
+  animation: dsh-pet-act-lion var(--pet-act-ms, 2600ms) ease-in-out;
+  transform-origin: 50% 100%;
+}
+
+@keyframes dsh-pet-act-lion {
+  0%, 100% { translate: 0 0; rotate: 0deg; scale: 1 1; }
+  12% { translate: 0 -10px; rotate: -6deg; scale: 0.96 1.06; }
+  24% { translate: 0 0; rotate: 6deg; scale: 1.04 0.95; }
+  36% { translate: 0 -12px; rotate: 8deg; scale: 0.96 1.06; }
+  48% { translate: 0 0; rotate: -8deg; scale: 1.04 0.95; }
+  60% { translate: 0 -10px; rotate: -5deg; scale: 0.96 1.06; }
+  72% { translate: 0 0; rotate: 5deg; scale: 1.03 0.96; }
+}
+
+/* 收红包：开心往上弹两下 */
+[data-dsh-pet][data-act='bounce'] {
+  animation: dsh-pet-act-bounce var(--pet-act-ms, 2200ms) ease-out;
+}
+
+@keyframes dsh-pet-act-bounce {
+  0%, 100% { translate: 0 0; scale: 1 1; }
+  14% { translate: 0 -16px; scale: 0.96 1.05; }
+  28% { translate: 0 0; scale: 1.04 0.94; }
+  44% { translate: 0 -20px; scale: 0.95 1.06; }
+  60% { translate: 0 0; scale: 1.05 0.94; }
+  76% { translate: 0 -8px; scale: 1 1; }
+}
+
+/* 蹦跶：一串小跳 */
+[data-dsh-pet][data-act='hop'] {
+  animation: dsh-pet-act-hop var(--pet-act-ms, 1200ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-hop {
+  0%, 100% { translate: 0 0; scale: 1 1; }
+  16% { translate: 0 -18px; scale: 0.97 1.04; }
+  32% { translate: 0 0; scale: 1.05 0.93; }
+  50% { translate: 0 -14px; scale: 0.98 1.03; }
+  68% { translate: 0 0; scale: 1.04 0.94; }
+  84% { translate: 0 -8px; scale: 1 1; }
+}
+
+/* 写福字：小幅左右摆动，像在落笔 */
+[data-dsh-pet][data-act='brush'] {
+  animation: dsh-pet-act-brush var(--pet-act-ms, 2400ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-brush {
+  0%, 100% { rotate: 0deg; translate: 0 0; }
+  12% { rotate: -5deg; translate: -2px 1px; }
+  24% { rotate: 5deg; translate: 2px 0; }
+  36% { rotate: -4deg; translate: -2px -1px; }
+  48% { rotate: 6deg; translate: 3px 1px; }
+  62% { rotate: -6deg; translate: -3px 0; }
+  76% { rotate: 3deg; translate: 1px 1px; }
+}
+
+/* 吃饺子：咀嚼式上下压缩 */
+[data-dsh-pet][data-act='chew'] {
+  animation: dsh-pet-act-chew var(--pet-act-ms, 2200ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-chew {
+  0%, 100% { scale: 1 1; translate: 0 0; }
+  10% { scale: 1.03 0.96; translate: 0 1px; }
+  20% { scale: 0.98 1.02; translate: 0 -1px; }
+  30% { scale: 1.03 0.96; translate: 0 1px; }
+  40% { scale: 0.98 1.02; translate: 0 -1px; }
+  50% { scale: 1.03 0.96; translate: 0 1px; }
+  60% { scale: 0.99 1.01; translate: 0 0; }
+}
+
+/* 害羞：缩一下再左右扭 */
+[data-dsh-pet][data-act='shy'] {
+  animation: dsh-pet-act-shy var(--pet-act-ms, 1800ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-shy {
+  0%, 100% { scale: 1 1; rotate: 0deg; }
+  20% { scale: 0.94 0.94; rotate: -4deg; }
+  40% { scale: 0.96 0.96; rotate: 4deg; }
+  60% { scale: 0.95 0.95; rotate: -3deg; }
+  80% { scale: 0.98 0.98; rotate: 2deg; }
+}
+
+/* 鼓掌：快速小幅左右晃 */
+[data-dsh-pet][data-act='cheer'] {
+  animation: dsh-pet-act-cheer var(--pet-act-ms, 1800ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-cheer {
+  0%, 100% { rotate: 0deg; translate: 0 0; }
+  12% { rotate: 6deg; translate: 2px 0; }
+  24% { rotate: -6deg; translate: -2px 0; }
+  36% { rotate: 6deg; translate: 2px 0; }
+  48% { rotate: -6deg; translate: -2px 0; }
+  60% { rotate: 5deg; translate: 2px 0; }
+  72% { rotate: -5deg; translate: -2px 0; }
+}
+
+/* 转晕了：越转越歪，最后晃两下站定 */
+[data-dsh-pet][data-act='dizzy'] {
+  animation: dsh-pet-act-dizzy var(--pet-act-ms, 2000ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-dizzy {
+  0% { rotate: 0deg; translate: 0 0; }
+  25% { rotate: -14deg; translate: -3px 0; }
+  50% { rotate: 14deg; translate: 3px 0; }
+  70% { rotate: -9deg; translate: -2px 0; }
+  85% { rotate: 5deg; translate: 1px 0; }
+  100% { rotate: 0deg; translate: 0 0; }
+}
+
+/* 转圈 */
+[data-dsh-pet][data-act='spin'] {
+  animation: dsh-pet-act-spin var(--pet-act-ms, 1200ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-spin {
+  0% { rotate: 0deg; }
+  100% { rotate: 360deg; }
+}
+
+/* 打滚：横向滚一段再回位 */
+[data-dsh-pet][data-act='roll'] {
+  animation: dsh-pet-act-roll var(--pet-act-ms, 1600ms) ease-in-out;
+}
+
+@keyframes dsh-pet-act-roll {
+  0% { rotate: 0deg; translate: 0 0; }
+  25% { rotate: -180deg; translate: -18px 0; }
+  50% { rotate: -360deg; translate: -30px 0; }
+  75% { rotate: -540deg; translate: -18px 0; }
+  100% { rotate: -720deg; translate: 0 0; }
+}
+
+/* 关动画 / reduced motion：动作只留一个轻微缩放，不做位移旋转 */
+[data-dsh-pet][data-motion='off'][data-act] {
+  animation: dsh-pet-act-quiet var(--pet-act-ms, 1600ms) ease-in-out !important;
+}
+
+@keyframes dsh-pet-act-quiet {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-pet][data-act] {
+    animation: dsh-pet-act-quiet var(--pet-act-ms, 1600ms) ease-in-out;
+  }
+  [data-dsh-pet] .dsh-pet-fx-item {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ── 手臂：让动作「看得见手在动」 ─────────────────────────────────────
+ *
+ * 骨架见 client-src/characters.js 的 petArms()：外层 g 用 translate 把原点放到
+ * 肩上，内层形状再以自己的 bbox 顶边为轴旋转。动作只改内层的 rotate，
+ * 所以不会和根元素的 --pet-scale（transform 属性）打架。
+ */
+.dsh-pet-arm-shape {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  rotate: 10deg;
+}
+
+.dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  rotate: -10deg;
+}
+
+/* 胳膊用身体色，手掌用肚皮色 + 一点描边 —— 不然手臂和头同色，抬起来就"消失"了 */
+.dsh-pet-limb {
+  fill: var(--pet-c1);
+  stroke: var(--pet-c4);
+  stroke-width: 0.9;
+  stroke-opacity: 0.34;
+}
+
+.dsh-pet-hand {
+  fill: var(--pet-c2);
+  stroke: var(--pet-c4);
+  stroke-width: 0.8;
+  stroke-opacity: 0.28;
+}
+
+/* 八个手臂姿态，每个动作挑一个。左右手分开写，因为镜像角度不同。 */
+[data-dsh-pet][data-pose='raise'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-raise-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='raise'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-raise-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='lift'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-lift-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='lift'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-lift-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='hold'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-hold-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='hold'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-hold-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='clasp'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-clasp-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='clasp'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-clasp-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='write'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-write-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='write'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-write-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='eat'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-eat-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='eat'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-eat-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='shy'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-shy-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='shy'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-shy-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='clap'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-clap-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='clap'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-clap-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='balance'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-balance-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='balance'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-balance-r var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='pump'] .dsh-pet-arm[data-arm='l'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-pump-l var(--pet-act-ms) ease-in-out both;
+}
+
+[data-dsh-pet][data-pose='pump'] .dsh-pet-arm[data-arm='r'] .dsh-pet-arm-shape {
+  animation: dsh-pet-arm-pump-r var(--pet-act-ms) ease-in-out both;
+}
+
+@keyframes dsh-pet-arm-raise-l {
+  0% { rotate: 10deg; }
+  30% { rotate: 132deg; }
+  55% { rotate: 148deg; }
+  75% { rotate: 140deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-raise-r {
+  0% { rotate: -10deg; }
+  30% { rotate: -132deg; }
+  55% { rotate: -148deg; }
+  75% { rotate: -140deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-lift-l {
+  0% { rotate: 10deg; }
+  26% { rotate: -118deg; }
+  50% { rotate: -128deg; }
+  74% { rotate: -120deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-lift-r {
+  0% { rotate: -10deg; }
+  26% { rotate: 118deg; }
+  50% { rotate: 128deg; }
+  74% { rotate: 120deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-hold-l {
+  0% { rotate: 10deg; }
+  100% { rotate: 22deg; }
+}
+
+@keyframes dsh-pet-arm-hold-r {
+  0% { rotate: -10deg; }
+  18% { rotate: 58deg; }
+  44% { rotate: 62deg; }
+  70% { rotate: 56deg; }
+  100% { rotate: 58deg; }
+}
+
+@keyframes dsh-pet-arm-clasp-l {
+  0% { rotate: 10deg; }
+  28% { rotate: -58deg; }
+  52% { rotate: -68deg; }
+  78% { rotate: -50deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-clasp-r {
+  0% { rotate: -10deg; }
+  28% { rotate: 58deg; }
+  52% { rotate: 68deg; }
+  78% { rotate: 50deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-write-l {
+  0% { rotate: 10deg; }
+  22% { rotate: 38deg; }
+  72% { rotate: 34deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-write-r {
+  0% { rotate: -10deg; }
+  18% { rotate: 62deg; }
+  34% { rotate: 44deg; }
+  52% { rotate: 66deg; }
+  70% { rotate: 46deg; }
+  86% { rotate: 60deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-eat-l {
+  0% { rotate: 10deg; }
+  30% { rotate: 46deg; }
+  70% { rotate: 44deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-eat-r {
+  0% { rotate: -10deg; }
+  22% { rotate: 104deg; }
+  42% { rotate: 92deg; }
+  62% { rotate: 108deg; }
+  82% { rotate: 94deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-shy-l {
+  0% { rotate: 10deg; }
+  32% { rotate: -74deg; }
+  68% { rotate: -84deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-shy-r {
+  0% { rotate: -10deg; }
+  32% { rotate: 74deg; }
+  68% { rotate: 84deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-clap-l {
+  0% { rotate: 10deg; }
+  18% { rotate: -52deg; }
+  36% { rotate: -74deg; }
+  54% { rotate: -52deg; }
+  72% { rotate: -74deg; }
+  90% { rotate: -54deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-clap-r {
+  0% { rotate: -10deg; }
+  18% { rotate: 52deg; }
+  36% { rotate: 74deg; }
+  54% { rotate: 52deg; }
+  72% { rotate: 74deg; }
+  90% { rotate: 54deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-balance-l {
+  0% { rotate: 10deg; }
+  25% { rotate: 84deg; }
+  62% { rotate: 72deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-balance-r {
+  0% { rotate: -10deg; }
+  25% { rotate: -84deg; }
+  62% { rotate: -72deg; }
+  100% { rotate: -10deg; }
+}
+
+@keyframes dsh-pet-arm-pump-l {
+  0% { rotate: 10deg; }
+  25% { rotate: 48deg; }
+  50% { rotate: 20deg; }
+  75% { rotate: 46deg; }
+  100% { rotate: 10deg; }
+}
+
+@keyframes dsh-pet-arm-pump-r {
+  0% { rotate: -10deg; }
+  25% { rotate: -48deg; }
+  50% { rotate: -20deg; }
+  75% { rotate: -46deg; }
+  100% { rotate: -10deg; }
+}
+
+/* 关掉动画时手臂也保持一个自然的垂手姿态 */
+[data-dsh-pet][data-motion='off'] .dsh-pet-arm-shape,
+[data-dsh-pet][data-motion='off'][data-pose] .dsh-pet-arm-shape {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-pet][data-pose] .dsh-pet-arm-shape {
+    animation: none;
+  }
+}
+
+/* ── 动作道具层 ─────────────────────────────────────────────────────── */
+
+.dsh-pet-prop-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.dsh-pet-prop-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
+}
+
+/* 舞狮：狮头在宠物头上，披风垂下来，两根杆子连到举起的手 */
+.dsh-pet-lion-petal {
+  fill: #d94f3d;
+}
+
+/* 内层鬃毛压深一档，狮头才有厚度 */
+.dsh-pet-lion-petal-inner {
+  fill: #b23a2c;
+}
+
+/* 戴着狮头的时候，脑袋上那颗小橘子会从狮头额头上钻出来，先藏起来 */
+[data-dsh-pet][data-prop='lion'] .dsh-pet-hat {
+  display: none;
+}
+
+.dsh-pet-lion-cloth {
+  fill: #c0392b;
+}
+
+.dsh-pet-lion-trim {
+  fill: none;
+  stroke: #f3c04a;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.dsh-pet-lion-pole {
+  fill: none;
+  stroke: #8b5a2b;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.dsh-pet-lion-face {
+  fill: #f2b53c;
+  stroke: #c98b23;
+  stroke-width: 0.8;
+}
+
+.dsh-pet-lion-brow {
+  fill: #d94f3d;
+}
+
+.dsh-pet-lion-eye {
+  fill: #fffdf5;
+}
+
+.dsh-pet-lion-pupil {
+  fill: #2b1d13;
+}
+
+.dsh-pet-lion-glint {
+  fill: #fff;
+}
+
+.dsh-pet-lion-jaw {
+  fill: #a02b22;
+}
+
+.dsh-pet-lion-teeth {
+  fill: none;
+  stroke: #fffdf5;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.dsh-pet-lion-tongue {
+  fill: #e2584a;
+}
+
+.dsh-pet-lion-horn {
+  fill: #f3c04a;
+  stroke: #c98b23;
+  stroke-width: 0.7;
+}
+
+.dsh-pet-lion-nose {
+  fill: #c0392b;
+}
+
+.dsh-pet-lion-tassel-line {
+  fill: none;
+  stroke: #f3c04a;
+  stroke-width: 1.4;
+}
+
+.dsh-pet-lion-tassel-ball {
+  fill: #d94f3d;
+}
+
+.dsh-pet-lion-head {
+  animation: dsh-pet-lion-bob var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.dsh-pet-lion-mouth {
+  animation: dsh-pet-lion-chomp var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+
+.dsh-pet-lion-tassel {
+  animation: dsh-pet-lion-swing var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+@keyframes dsh-pet-lion-bob {
+  0% { rotate: -5deg; translate: 0 6px; }
+  28% { rotate: 4deg; translate: 0 -2px; }
+  52% { rotate: -3deg; translate: 0 -4px; }
+  76% { rotate: 5deg; translate: 0 -1px; }
+  100% { rotate: -5deg; translate: 0 6px; }
+}
+
+@keyframes dsh-pet-lion-chomp {
+  0% { scale: 1 0.7; }
+  22% { scale: 1 1.15; }
+  44% { scale: 1 0.75; }
+  66% { scale: 1 1.12; }
+  100% { scale: 1 0.7; }
+}
+
+@keyframes dsh-pet-lion-swing {
+  0% { rotate: -6deg; }
+  50% { rotate: 7deg; }
+  100% { rotate: -6deg; }
+}
+
+/* 作揖：两只拳头在身前抱在一起，袖子垫在下面 */
+.dsh-pet-sleeve {
+  fill: #c0392b;
+  stroke: #f3c04a;
+  stroke-width: 1.1;
+}
+
+.dsh-pet-sleeve-trim {
+  fill: none;
+  stroke: #f3c04a;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.95;
+}
+
+.dsh-pet-sleeve-line {
+  fill: none;
+  stroke: #f3c04a;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.dsh-pet-fist {
+  fill: var(--pet-c2);
+  stroke: var(--pet-c4);
+  stroke-width: 0.8;
+  stroke-opacity: 0.3;
+}
+
+.dsh-pet-clasp {
+  animation: dsh-pet-clasp-bow var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+@keyframes dsh-pet-clasp-bow {
+  0% { translate: 0 6px; }
+  28% { translate: 0 -1px; }
+  52% { translate: 0 -3px; }
+  78% { translate: 0 0; }
+  100% { translate: 0 6px; }
+}
+
+/* 红包：红底金边金印，被两只手举起来 */
+.dsh-pet-envelope-body {
+  fill: #d64545;
+  stroke: #b03a3a;
+  stroke-width: 0.7;
+}
+
+.dsh-pet-envelope-flap {
+  fill: none;
+  stroke: #b03a3a;
+  stroke-width: 0.9;
+}
+
+.dsh-pet-envelope-band {
+  fill: #f3c04a;
+}
+
+.dsh-pet-envelope-seal {
+  fill: #f3c04a;
+  stroke: #c99a2e;
+  stroke-width: 0.6;
+}
+
+.dsh-pet-envelope-shine {
+  fill: #fff;
+  opacity: 0.45;
+}
+
+.dsh-pet-envelope {
+  animation: dsh-pet-envelope-up var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+@keyframes dsh-pet-envelope-up {
+  0% { translate: 0 8px; rotate: -6deg; }
+  30% { translate: 0 -3px; rotate: 0deg; }
+  60% { translate: 0 -5px; rotate: 4deg; }
+  100% { translate: 0 -2px; rotate: 0deg; }
+}
+
+/* 写福字：红纸、毛笔、一笔笔写出来的墨 */
+.dsh-pet-paper {
+  fill: #d64545;
+}
+
+.dsh-pet-paper-edge {
+  fill: none;
+  stroke: #f3c04a;
+  stroke-width: 1.4;
+}
+
+.dsh-pet-ink {
+  fill: none;
+  stroke: #2b1d13;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: dsh-pet-ink-draw 0.42s linear both;
+  animation-delay: var(--pet-ink-delay, 0s);
+}
+
+@keyframes dsh-pet-ink-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.dsh-pet-brush-handle {
+  fill: none;
+  stroke: #8b5a2b;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.dsh-pet-brush-tip {
+  fill: #2b1d13;
+}
+
+.dsh-pet-brush {
+  animation: dsh-pet-brush-write var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 100% 0%;
+}
+
+@keyframes dsh-pet-brush-write {
+  0% { translate: 0 0; rotate: 0deg; }
+  16% { translate: -6px 4px; rotate: -8deg; }
+  32% { translate: 2px 1px; rotate: 4deg; }
+  48% { translate: -6px 5px; rotate: -7deg; }
+  64% { translate: 1px 2px; rotate: 3deg; }
+  80% { translate: -5px 5px; rotate: -6deg; }
+  100% { translate: -4px 3px; rotate: -2deg; }
+}
+
+/* 吃饺子：青花碗 + 两只饺子 + 筷子 + 热气 */
+.dsh-pet-bowl-rim {
+  fill: none;
+  stroke: #cfd8e3;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.dsh-pet-bowl-body {
+  fill: #f2f6fb;
+  stroke: #cfd8e3;
+  stroke-width: 1;
+}
+
+.dsh-pet-bowl-base {
+  fill: none;
+  stroke: #cfd8e3;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.dsh-pet-dumpling {
+  fill: #fdf3dc;
+  stroke: #e4d3ac;
+  stroke-width: 0.7;
+}
+
+.dsh-pet-chopstick {
+  fill: none;
+  stroke: #8b5a2b;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.dsh-pet-chopsticks {
+  animation: dsh-pet-chopsticks var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 100% 100%;
+}
+
+@keyframes dsh-pet-chopsticks {
+  0% { rotate: 0deg; }
+  25% { rotate: -12deg; }
+  50% { rotate: 4deg; }
+  75% { rotate: -10deg; }
+  100% { rotate: 0deg; }
+}
+
+.dsh-pet-steam-wisp {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.dsh-pet-steam {
+  animation: dsh-pet-steam var(--pet-act-ms) ease-in-out both;
+}
+
+@keyframes dsh-pet-steam {
+  0% { opacity: 0; translate: 0 3px; }
+  30% { opacity: 0.8; translate: 0 0; }
+  70% { opacity: 0.5; translate: 0 -4px; }
+  100% { opacity: 0; translate: 0 -7px; }
+}
+
+.dsh-pet-bowl {
+  animation: dsh-pet-bowl-in var(--pet-act-ms) ease-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+@keyframes dsh-pet-bowl-in {
+  0% { translate: 0 10px; opacity: 0; }
+  22% { translate: 0 0; opacity: 1; }
+  100% { translate: 0 0; opacity: 1; }
+}
+
+/* 放烟花：手里一根仙女棒，顶端在炸火花 */
+.dsh-pet-firework-stick {
+  fill: none;
+  stroke: #8b5a2b;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.dsh-pet-firework-core {
+  fill: #ffd166;
+}
+
+.dsh-pet-firework-core-2 {
+  fill: #ffb347;
+  opacity: 0.35;
+}
+
+.dsh-pet-firework-ray {
+  fill: none;
+  stroke: #ff9f43;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.dsh-pet-firework-spark {
+  animation: dsh-pet-spark-burst var(--pet-act-ms) ease-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+@keyframes dsh-pet-spark-burst {
+  0% { scale: 0.2; opacity: 0; }
+  18% { scale: 1; opacity: 1; }
+  45% { scale: 1.24; opacity: 0.85; }
+  72% { scale: 0.94; opacity: 1; }
+  100% { scale: 0.2; opacity: 0; }
+}
+
+.dsh-pet-firework {
+  animation: dsh-pet-firework-hold var(--pet-act-ms) ease-in-out both;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+@keyframes dsh-pet-firework-hold {
+  0% { translate: 0 6px; rotate: -4deg; }
+  40% { translate: 0 -2px; rotate: 3deg; }
+  100% { translate: 0 0; rotate: 0deg; }
+}
+
+/* ── 设置：活动流 / 日记 / 图集 ─────────────────────────────────────── */
+
+.dsh-pet-settings-inline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dsh-pet-settings-diary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--dsw-radius-md, 8px);
+  background: var(--dsw-alias-settings-card-fill, rgb(0 0 0 / 4%));
+  border: 1px solid var(--dsw-alias-settings-card-stroke, rgb(0 0 0 / 8%));
+}
+
+.dsh-pet-settings-diary-line {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary, #666);
+}
+
+.dsh-pet-settings-skins {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dsh-pet-settings-skin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dsh-pet-settings-skin-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--dsw-radius-sm, 6px);
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2, rgb(0 0 0 / 4%));
+}
+
+.dsh-pet-settings-skin-thumb .dsh-pet-sprite-thumb {
+  width: 30px;
+}
+
+.dsh-pet-settings-skin-label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #333);
+}
+
+/* ── 装扮层 ───────────────────────────────────────────────────────────
+ * 常驻配饰画在角色之上、动作道具之下，坐标系与道具层一致（100×100，
+ * 对着位图图集量的：橘子 y3–13、眼睛 y25、脖子 y58、短裤 y80–93）。 */
+
+.dsh-pet-outfit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.dsh-pet-outfit-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
+}
+
+/* 红围巾 */
+.dsh-pet-scarf-band { fill: #e05b4e; }
+.dsh-pet-scarf-fold { fill: none; stroke: #f28a7c; stroke-width: 1.4; stroke-linecap: round; }
+.dsh-pet-scarf-tail { fill: #d14b40; }
+.dsh-pet-scarf-tail-inner { fill: none; stroke: #f28a7c; stroke-width: 1.5; stroke-linecap: round; }
+.dsh-pet-scarf-knot { fill: #e8625a; stroke: #c33f36; stroke-width: 0.8; }
+
+/* 贝雷帽 */
+.dsh-pet-beret-main { fill: #5b79cf; }
+.dsh-pet-beret-band { fill: #463f8f; opacity: 0.55; }
+.dsh-pet-beret-shine { fill: none; stroke: rgb(255 255 255 / 55%); stroke-width: 2.2; stroke-linecap: round; }
+.dsh-pet-beret-stem { fill: #46609f; }
+
+/* 圆框眼镜 */
+.dsh-pet-glasses-lens { fill: rgb(150 200 255 / 22%); stroke: #3b3a44; stroke-width: 2; }
+.dsh-pet-glasses-frame { fill: none; stroke: #3b3a44; stroke-width: 2; stroke-linecap: round; }
+.dsh-pet-glasses-temple { fill: none; stroke: #3b3a44; stroke-width: 1.8; stroke-linecap: round; }
+.dsh-pet-glasses-glint { fill: none; stroke: rgb(255 255 255 / 80%); stroke-width: 1.2; stroke-linecap: round; }
+
+/* 耳机 */
+.dsh-pet-headphones-band { fill: none; stroke: #3a3f4b; stroke-width: 4.2; stroke-linecap: round; }
+.dsh-pet-headphones-cup { fill: #2f3440; }
+.dsh-pet-headphones-cushion { fill: #8ea1c4; }
+
+/* 花环 */
+.dsh-pet-flower-vine { fill: none; stroke: #7a5c3e; stroke-width: 1.6; stroke-linecap: round; }
+.dsh-pet-flower-petal { fill: #ff9ec2; }
+.dsh-pet-flower-core { fill: #ffd166; }
+.dsh-pet-flower-glint { fill: #fff; }
+.dsh-pet-flower-leaf { fill: #7fc08a; }
+
+/* 圣诞帽 */
+.dsh-pet-santa-cone { fill: #d93b34; }
+.dsh-pet-santa-cone-shade { fill: #b62e29; opacity: 0.7; }
+.dsh-pet-santa-brim { fill: #fff7f0; }
+.dsh-pet-santa-pompom { fill: #fff7f0; stroke: rgb(190 160 140 / 35%); stroke-width: 0.8; }
+
+/* 领结 */
+.dsh-pet-bowtie-wing { fill: #d94b45; }
+.dsh-pet-bowtie-knot { fill: #b93a36; }
+
+/* 小披风 */
+.dsh-pet-cape-panel { fill: #c8453f; }
+.dsh-pet-cape-lining { fill: none; stroke: #f0b03c; stroke-width: 1.6; stroke-linecap: round; }
+.dsh-pet-cape-collar { fill: #d94b45; }
+.dsh-pet-cape-collar-line { fill: none; stroke: #f0b03c; stroke-width: 1.2; stroke-linecap: round; }
+
+/* 小书包 */
+.dsh-pet-backpack-body { fill: #4f74c8; }
+.dsh-pet-backpack-strap { fill: none; stroke: #3c5aa0; stroke-width: 3.2; stroke-linecap: round; }
+.dsh-pet-backpack-pocket { fill: #6f8fd8; }
+.dsh-pet-backpack-clip { fill: #f0c24a; }
+
+/* ── 自备静态形象（用户自己的图） ─────────────────────────────────────
+ * 这类图没有逐帧动作，靠三件小事显得"活"：
+ *   1) 呼吸：极缓慢的纵向缩放（1 → 1.015），比位移更自然；
+ *   2) 随光标倾斜：--pet-img-tilt / --pet-img-shift 由 overlay.js 写入；
+ *   3) 柔和落地阴影：图是抠底的，没阴影会像贴纸浮着。
+ * 不用 transform 而是独立属性（rotate/translate/scale），避免和 --pet-size 抢。
+ */
+[data-dsh-pet] {
+  --pet-img-tilt: 0deg;
+  --pet-img-shift: 0px;
+}
+
+.dsh-pet-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: var(--pet-size, 104px);
+  max-height: var(--pet-size, 104px);
+  margin: 0 auto;
+  translate: var(--pet-img-shift) 0;
+  rotate: var(--pet-img-tilt);
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 16%)) drop-shadow(0 1px 2px rgb(0 0 0 / 10%));
+  animation: dsh-pet-image-breathe 4.2s ease-in-out infinite;
+  transition: rotate 220ms ease-out, translate 220ms ease-out;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+@keyframes dsh-pet-image-breathe {
+  0%, 100% { scale: 1; }
+  50% { scale: 1.015 1.008; }
+}
+
+[data-motion='off'] .dsh-pet-image,
+[data-dsh-pet][data-motion='off'] .dsh-pet-image {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-pet-image { animation: none; }
+}
+
+.dsh-pet-image-thumb {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 12%));
+}
+

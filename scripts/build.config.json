@@ -1,0 +1,6 @@
+{
+  "//": "构建配置。themeBundleCandidates 里的 ~ 会被展开成 $HOME；第一个存在的路径用于 --dsw-* token 名校验。",
+  "themeBundleCandidates": [
+    "~/.nvm/versions/node/v24.21.0/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/lib/client.js"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "dsh-pet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 桌面宠物插件：3 只矢量形象、任务状态联动（运行/完成/待审批/出错）、一键跳转会话、养成与番茄钟，纯前端无外部素材、无第三方运行时依赖。",
+  "type": "module",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "files": [
+    "lib",
+    "client.js",
+    "client-src",
+    "styles",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check",
+    "test": "node --test test/pet.test.mjs",
+    "verify": "node scripts/verify-ui.mjs"
+  }
+}

@@ -1,0 +1,14 @@
+# 依赖与本地运行产物
+node_modules/
+state/
+*.log
+
+# 验收截图（scripts/verify-ui.mjs、scripts/capture*.mjs 生成）
+docs/verification/
+
+# 系统杂项
+.DS_Store
+
+# Python 字节码（scripts/*.py）
+__pycache__/
+*.pyc
