@@ -1,20 +1,23 @@
 # dsh-pet
 
-DSH（DeepSeek Harness）Web 界面的桌宠插件：一只住在右下角、会跟着你的会话状态动的小宠物。**只剩一只宠物——水豚噜噜（位图）**，`client.js` 约 784 KB（其中噜噜图集 442 KB 内联）。支持把**你自己的图片**变成形象（见「自备形象」）。
+DSH（DeepSeek Harness）Web 界面的桌宠插件：一只住在右下角、会跟着你的会话状态动的小宠物。内置两只位图形象——默认的**水豚噜噜**（idle 用图生视频抽的新帧，12 个专属动作全是透明 WebM 视频）与 **噜噜（经典）**（上游原版图集），`client.js` 约 3.7 MB（内联两张图集 442 KB + 419 KB、12 条动作视频 856 KB、回退用胶片条 57 KB）。支持把**你自己的图片**变成形象（见「自备形象」）。
 
 它是自己写的一套，替代并卸载了 `@michengai/dsh-codex-pet` 与 `dsh-whale-widget`。
 
-![噜噜（唯一形象）在右下角](docs/verification/pet/pet-lulu-1440x900.png)
+![噜噜在右下角](docs/verification/pet/pet-lulu-1440x900.png)
 
 ![右上角右键：菜单自动翻到下方，不会被屏幕边缘裁掉](docs/verification/pet/pet-menu-top-right-1440x900.png)
 
 ## 有什么
 
-**形象**：只有一只噜噜（位图）。矢量版已按用户要求删除，现在 `PET_CHARACTERS` 只有一条：
+**形象**：两只位图噜噜。矢量版与其它社区形象都已按用户要求删除，`PET_CHARACTERS` 现在两条：
 
 | id | 形象 | 类型 | 说明 |
 | --- | --- | --- | --- |
-| `lulu` | 噜噜（唯一） | 位图 | 水豚，8×11 图集，9 组动作 + 慢速 idle + **16 向注视帧**；动作时道具层（狮头 / 红包 / 毛笔 / 碗筷 / 烟花棒）照常盖在它身上 |
+| `pilot` | 噜噜（默认） | 位图 | 同一套 8×11 协议，第 0 行 idle 换成图生视频（Wan2.2-I2V）抽的 6 帧；12 个专属动作全部是 MiniMax 生成的透明 WebM 视频，见「原生动作」 |
+| `lulu` | 噜噜（经典） | 位图 | 上游原版图集，9 组动作 + 慢速 idle + **16 向注视帧**；视频不可用/关动效时道具层（狮头 / 红包 / 毛笔 / 碗筷 / 烟花棒）照常盖在它身上 |
+
+两只角色共用同一套动作与视频。**2026-11-05 起默认形象换成 `pilot`**：老用户 localStorage 里如果还停在原来的默认 `lulu`，首次加载会做一次性迁移到 `pilot`（迁移标记 `dsh-pet:migrate:v1-default-pilot`，只迁移一次，之后手动选回经典版不会被覆盖）。
 
 其它形象（糯米猫 / 企鹅豆 / 小火狐 / 布布 / 团团 / 像素鸭 / 咕咚 / 薄荷）与矢量噜噜都已按用户要求移除：源码里的角色条目删掉，素材挪到 `/root/backups/dsh-pet-assets-removed-20261102/`。想再要回来，`assets/` 放回图集 + 在 `PET_CHARACTERS` 里加一条 `{ kind: 'sprite', sprite: petSpritePack(url, { rows: 9|11 }) }` 即可（`scripts/pack-sprite.mjs` 能直接生成条目）；设置页的「自定义图集」也能直接导入。
 
@@ -119,7 +122,7 @@ DSH（DeepSeek Harness）Web 界面的桌宠插件：一只住在右下角、会
 
 ```bash
 # 1. 把图片放进收件箱（png / jpg / webp 都行，中文文件名也行）
-#    /root/workspace/lulu-images/
+#    /root/workspace/plugins/dsh-pet/images/
 # 2. 抠底 + 裁边 + 缩到 320px + 生成内联数据模块
 python3 scripts/import-lulu.py
 # 3. 重新打包
@@ -140,7 +143,7 @@ node scripts/build.mjs
 静态图能用，但它只会呼吸——想要眨眼、摆尾、摇晃这种「活」的感觉，就给动图。支持 gif、动态 webp，以及 mp4 / mov / webm 短片：
 
 ```bash
-python3 scripts/import-anim.py --in /root/workspace/lulu-images/lulu-idle.gif --label 噜噜
+python3 scripts/import-anim.py --in /root/workspace/plugins/dsh-pet/images/lulu-idle.gif --label 噜噜
 # 或短视频：--fps 12 --max-frames 16
 node scripts/build.mjs
 ```
@@ -160,6 +163,43 @@ node scripts/build.mjs
 
 **已验证**：用内置图集 idle 的 6 帧做了个演示动图跑完整条链路，浏览器实测 `data-render=anim`、`background-size: 600% 100%`、动画名 `dsh-pet-anim-a-lulu-idle`、时长 1.1s、`steps(1)` 离散换帧、background-position 逐帧推进（0 → -960px）、136 档渲染 126×136px、无控制台报错；截图 `docs/verification/pet/pet-anim-demo.png`。演示素材验证完已清空（插件默认仍是内置噜噜）。
 
+### 原生动作（生成视频 → 透明 WebM / 横向胶片条）
+
+程序化动作是 SVG 手臂 + 道具「拼」出来的，能表达意思，但不是噜噜真在动。这一版试了另一条路：让视频模型生成整身动作，再交给浏览器按「整段视频」播。
+
+**首选：透明 WebM（`<video>` 直接播）。** 帧率、时长都不受 8×11 图集协议约束，动作就是视频里那一段真实表演：
+
+```bash
+# 绿幕 mp4 → assets/anim-<action>.webm（VP9 + alpha，画布 384×416）
+python3 scripts/video-to-webm.py --video /root/.hermes/cache/scratch/act/cheer.mp4 \
+    --action cheer --start 49 --frames 30
+node scripts/build.mjs
+```
+
+约定（脚本按这个约定输出，渲染层也按这个约定摆，所以不需要任何额外计算）：画布是单元格 192×208 的 **2 倍**（384×416），角色高 396、脚底基线 406 —— 与图集「角色高 198、基线 203」同构。渲染层把 `<video>` 铺成 192×208 的层（`transform: scale(var(--pet-sprite-scale))`，底边对齐），换动作时角色不会跳大小、不会挪位置。`--start/--frames` 用来掐一个首尾相似度最好的循环段（cheer 取第 43–86 帧 = 44 帧 @24fps / 1.83s，正好盖住 1.8s 的动作）。
+
+链路：`video-to-webm.py` 抽帧 → 去绿/羽化（复用 `video-to-clip.py` 的抠像）→ 全片段统一并集 bbox + 中位高度缩放（保住跳起/下蹲的位移）→ raw RGBA 管道喂 `libvpx-vp9 -pix_fmt yuva420p -auto-alt-ref 0` → 在 `client-src/characters.js` 的 `PET_ACTION_VIDEOS` 登记 `{ url, seconds }`。构建把 webm 内联成 data URI（`scripts/build.mjs` 的素材类型已支持 webm，预算 768KB），运行时 `overlay.js` 的 `setVideoAction()` 给 `.dsh-pet-video` 挂 `src`、`currentTime = 0` 后 `play()`，同时隐藏 `.dsh-pet-sprite` 本体与 SVG 道具/装扮层。
+
+**回退：横向胶片条。** 浏览器不支持 alpha WebM、或解码失败时（错误记进 `state.videoBroken`，同一动作不再重试），自动退回横向 WebP + 逐帧 `background-position`：
+
+```bash
+python3 scripts/video-to-clip.py --in /root/.hermes/cache/scratch/act/cheer.mp4 --action cheer --frames 12
+```
+
+胶片条在 `PET_ACTION_CLIPS` 登记 `{ url, frameW, frameH, frames, stepMs }`，`setClip()` 挂 `data-clip` 后由 `steps(1,end)` 离散换帧 —— 和位图动作同一套机制。两条路都是「整只换姿势」，不是「噜噜身上叠一个道具」。
+
+现状：**12 个动作全部接了原生动作视频**，`lulu` 与 `pilot` 共用（`PET_ACTION_VIDEOS` 12 条）：newyear 2.21s / lion 2.58s / fireworks 2.42s / redpacket 2.21s / fu 2.42s / dumpling 2.21s / shy 1.79s / cheer 1.83s / dizzy 2.00s / spin 1.21s / roll 1.58s / hop 1.21s。素材全部来自腾讯云 TokenHub 的 `MiniMax-Video-H3-Max`（480P / 5s 图生视频 + 绿幕首帧，`prompt_expansion_mode=disabled`），13 条出片共 ¥21.45。
+
+生成经验（写下来免得再踩）：
+
+- **首帧参考图必须给足绿幕留白**：角色约占画面 62%、脚底上方留白，模型会忠实保留首帧构图。早期用贴边裁剪的 `ref_green.png` 当首帧，生成结果必然裁掉帽子/脚。现在的 `ref_green_v3.png` 是拿图集 idle 单格（192×208）放大到角色高 595px、居中贴在 960×960 纯绿幕上。
+- 提示词要写「严格保持首帧外观/配色/大小/位置」「全身含脚在画面内」「镜头完全静止」「背景纯绿 #00FF00」，并且**别在提示词里另写服饰**（会覆盖参考图）。
+- 一条 5s 源片按动作时长掐循环段：`prep_actions.py` 对每个动作取 `round(seconds*24)` 帧、滑动窗口找首尾差异最小的 start（hop/roll 这类位移大的会触发 `video-to-webm.py` 的并集高度收缩，避免顶破画布）。
+- 品质欠佳的两条：`lion` 的狮头比身体还大，把角色遮住了；`fireworks` 只做出彩纸、没做出烟花棒。想重生成时 TokenHub 已返回 `402 / 401007`（免费体验额度用完、后付费未开），等额度恢复再补。
+- `hop` 的旧胶片条素材（头肩大特写、帽子与脚出画）仍然不接；现在 hop 走视频，胶片条只留 cheer 当回退。
+
+代价：12 条视频内联后 **client.js 3,662.9KB**（webm 合计 856KB → base64 约 1.14MB）。下一版该改成宿主静态路由 `/pet/anim/<action>.webm` 按需加载（`preload="none"`，动作触发才拉），但改 host 半要重启 DSH 才生效，这一版先用内联换「刷新即生效」。
+
 ## 素材来源与许可
 
 位图素材都是社区公开的 **Codex pet 协议 v2** 图集（1536×2288 或 1536×1872，8 列 × 11/9 行、单格 192×208、RGBA），逐张重新压缩为 WebP 后内联，未做任何缩放（原分辨率就是 200px 档要的清晰度）。
@@ -167,6 +207,9 @@ node scripts/build.mjs
 | 形象 | 上游 | 许可 |
 | --- | --- | --- |
 | 噜噜 | [czy666chen/lulu](https://github.com/czy666chen/lulu)（图集）、[srwang0506/HatchPet-CapybaraLulu](https://github.com/srwang0506/HatchPet-CapybaraLulu)（源帧/构建脚本） | MIT / Apache-2.0 |
+| 噜噜（试验）`pilot` | 以噜噜图集第 0 行 idle 为参考图，用 `Wan-AI/Wan2.2-I2V-A14B`（硅基流动）图生视频，抽帧后按原协议回填 idle 行 | 同上游（派生自 MIT/Apache-2.0 素材），本机自用 |
+| 12 条动作视频 `anim-*` | `MiniMax-Video-H3-Max`（腾讯云 TokenHub，480P/5s 图生视频，绿幕首帧）→ `scripts/video-to-webm.py` 转透明 WebM；每条按动作时长掐循环段（cheer 43–86 帧 / 44 帧 @24fps，其余见 `PET_ACTION_VIDEOS` 的 seconds） | 同上，本机自用 |
+| 鼓掌胶片条 `clip-cheer` | 同一段视频，`scripts/video-to-clip.py` 切成胶片条（视频解码失败时的回退） | 同上，本机自用 |
 
 （此前曾接入的布布 / 团团 / 像素鸭 / 咕咚 / 薄荷已移除，素材保留在 `/root/backups/dsh-pet-assets-removed-20261102/`，各自许可：MIT / MIT / MIT / CC BY 4.0 署名 `咕咚 by Rank` / MIT 署名 `Minty by Somnusochi`。）
 
@@ -244,24 +287,40 @@ cordis.patch.yml       - insert: [{id: dsh-pet, name: dsh-pet}]
 lib/index.js           host 半：只注册 /pet/status（只读），不写文件、不申请其它服务
 client.js              构建产物（不要手改）
 client-src/
-  characters.js        3 只角色的几何 + 浅色/深色配色事实来源
+  characters.js        角色定义（2 只位图）+ 图集/动作视频/胶片条登记 + 生成的 CSS
+  actions.js           12 个动作（时长、道具、粒子、SVG 手臂关键帧）
+  props.js             道具层绘制（狮头 / 红包 / 毛笔 / 碗筷 / 烟花棒）
+  outfits.js           装扮层（红围巾 / 圣诞帽 / 眼镜）
   i18n.js              中英字典 + 占位符替换
+  live.js              活动流 / 日记 / 预警轮询（host 侧 /pet/** 的客户端半个）
   store.js             设置与养成的 localStorage 存储（250ms 防抖、全部 try/catch）
   sound.js             WebAudio 合成音效（五声音阶，无素材）
   state.js             会话状态投影 → 宠物状态；事件检测
   overlay.js           宠物 DOM、动画、拖拽吸附、菜单、气泡、番茄钟
   settings.js          设置面板（React，官方槽位用）
   main.js              接线：样式注入、槽位注册、就地设置浮层
-scripts/build.mjs      拼包 + 三重校验（语法 / token 名 / 占位符）
-scripts/verify-ui.mjs  浏览器验收 131 项断言 + 截图 + JSON 报告
+styles/pet.css         全部样式（只覆盖 --dsw-* token）
+assets/                内联素材：lulu.webp、lulu-idle-v2.webp、anim-cheer.webm（64KB，MiniMax 44 帧）、clip-cheer.webp
+scripts/build.mjs      拼包 + 三重校验（语法 / token 名 / 占位符）+ 素材预算闸门
+scripts/verify-ui.mjs  浏览器验收 147 项断言 + 截图 + JSON 报告
 scripts/build.config.json  ui-theme bundle 候选路径（token 校验用）
-test/pet.test.mjs      6 组单元测试
+scripts/import-lulu.py     静态图 → 抠底/裁边 → assets/user/（自备形象）
+scripts/import-anim.py     gif/短视频 → 抠底/对齐 → 循环动图素材
+scripts/pack-sprite.mjs    社区图集 → PET_CHARACTERS 条目
+scripts/video-to-atlas.py  绿幕动作视频 → 图集某一行（8×11 协议）
+scripts/video-to-webm.py   绿幕动作视频 → 透明 WebM assets/anim-*.webm（原生动作）
+scripts/video-to-clip.py   绿幕动作视频 → 横向胶片条 assets/clip-*.webp（回退）
+scripts/gen-scene.py       真实照片级场景合成（rembg + Pollinations + 影调匹配，实验）
+scripts/gen-edit.py        图生图换场景（硅基流动 Qwen-Image-Edit，实验）
+test/pet.test.mjs      单元测试（20 个用例，bundle 形状 / 图集协议 / 流水线 / 动作库）
+test/host.test.mjs     host 侧单元测试（16 个用例）
 docs/verification/pet/ 验收报告与截图
+images/                素材工作区（生成/收集的原始图片视频，不进 bundle，勿删）
 ```
 
 ## 几个设计取舍
 
-**为什么手写拼包，不用 bundler。** 客户端 bundle 必须是 `window.__ModuleLoader__.load({id, factory})` 这一种同步 CJS 形状，用 vite/tsdown 反而要再维护一份「基线模块保持 external」的配置。8 个源文件按固定顺序拼进同一个 factory 作用域，构建成本接近零，`npm run check` 还能逐字节确认产物没走样。
+**为什么手写拼包，不用 bundler。** 客户端 bundle 必须是 `window.__ModuleLoader__.load({id, factory})` 这一种同步 CJS 形状，用 vite/tsdown 反而要再维护一份「基线模块保持 external」的配置。14 个源文件按固定顺序拼进同一个 factory 作用域，构建成本接近零，`npm run check` 还能逐字节确认产物没走样。
 
 **为什么构建期校验 CSS token 名。** 样式只覆盖 `--dsw-*` 官方 token，不硬编码颜色。构建脚本从当前安装的 ui-theme bundle 里取 token 名集合，自己定义的、`var()` 引用的都必须存在——官方哪天改名，构建立刻失败，而不是等用户发现"颜色不对"。同一个校验器抓出过 4 个我记错的 token 名（`--dsw-alias-state-warning-primary` 实际是 `--dsw-alias-state-warn-primary` 等）。
 
@@ -279,18 +338,33 @@ docs/verification/pet/ 验收报告与截图
 
 ## 验收记录
 
-`npm run verify` 在 1440×900、390×844 与一个 420×420 的小视口跑，2026-11-02 全绿（**133/133**），报告与截图在 `docs/verification/pet/`（`pet-1440x900.png`、`pet-390x844.png`、`pet-lulu-1440x900.png`、`pet-huge-1440x900.png`、`pet-menu-top-right-1440x900.png`）。断言覆盖：**装扮**（默认红围巾、换圣诞帽是替换不是叠加、眼镜对得上眼睛、右键「换装扮」循环并显示当前装扮）、launch token 能进页面、样式在 head 末尾、默认形象（新用户 = 位图噜噜）/落点/尺寸、CSS token 生效、点击弹气泡且亲密度 +1、右键菜单三组动作与 12 个动作可点播（拜年 → `data-act=bow` + 2.2s、放烟花 → 14 个火花）、设置页 12 个动作试演按钮、点击音效真实输出峰值 0.837、**右键菜单落点回归**（把宠物摆到右上角/右下角/小视口 420×420，菜单四边都必须在视口内、条目仍可点、点「摸摸」真生效）、设置浮层回归（点内部不关闭、关掉再重开仍不关闭、点外部才关闭）、大小四档（含超大 200px 按 200/208 等比放大）、拖拽回归（横拖 180px / 竖直拖 220px 都不回弹、拖到左边缘才吸附且保住纵向位置、刷新后位置保持、可恢复右下角）、16 向注视（正左/正上各验一格、注视时停 keyframes、进 dead zone 与静止 2.2s 回 idle）、手机端默认隐藏与开关后出现、无意外控制台报错。
+2026-11-05 第三轮（pilot 设为默认形象）：`npm run verify` 三视口 **148/148** 全绿（报告 `docs/verification/pet/verify-ui.json`）；单元测试 **21/21**（+ host 16/16）。默认形象 `pilot` 排在 `PET_CHARACTERS` 第一位、标签改为「噜噜 / Lulu」，原图集降级为「噜噜（经典） / Lulu (classic)」；`PET_DEFAULT_SETTINGS.character = 'pilot'`；新增一次性迁移 `petMigrateDefaultCharacter()`（老设置停在 `lulu` 的迁到 `pilot`，只做一次，用户之后再选经典版不受影响）；设置里删掉自备形象时的回落也改到 `pilot`。验收相应改动：新用户默认形象断言改成 `pilot`、新增「经典 lulu 能切过去且图集与 pilot 不同」、设置卡片文案改成「默认 pilot + 经典 lulu」。单测新增迁移用例（老 lulu 数据 → pilot、其它设置不被冲掉、迁一次后尊重用户选择）与两只形象的顺序/标签/回落断言。
+
+2026-11-05 第二轮（12 个动作全部换成原生视频）：`npm run verify` 三视口全绿（**147/147**，报告 `docs/verification/pet/verify-ui.json`）；单元测试 **20/20**（+ host 16/16）。`PET_ACTION_VIDEOS` 扩到 12 条，`lulu`/`pilot` 共用；`client.js` 3,662.9KB（内联 12 条 webm + 图集 + 胶片条）。验收新增一条覆盖断言「12 个专属动作全部由透明 WebM 播放」（逐个触发，检查 `data-clip-active=video`、`src` 是 `data:video/webm`、`display:block`）；原来「手里有道具」的 18 条断言改为在**关掉动效**的回落路径上验（视频让位时 SVG 道具/姿态仍完整）。单测新增「两只角色的视频表必须覆盖 `PET_ACTIONS` 全部 12 个动作」。页面实拍 `docs/verification/pet/pet-actions-*.png`（lion/fireworks/newyear/dizzy/spin/hop/roll）。已知欠佳：lion 狮头过大遮住角色、fireworks 无烟花棒；TokenHub 现已 `402/401007`，重生成要等额度。
+
+2026-11-05（cheer 换成 MiniMax 生成素材）：`npm run verify` 三视口全绿（**147/147**，报告 `docs/verification/pet/verify-ui.json`，截图 `pet-pilot-cheer.png`）；单测 **20/20**。
+这一版把 `assets/anim-cheer.webm` 换成腾讯云 TokenHub `MiniMax-Video-H3-Max`（480P、5s）图生视频的产物：绿幕首帧用图集 idle 第 0 帧放大粘在 960×960 绿幕上（角色高 62%、脚底留白），提示词强调「镜头静止／角色大小位置不变／全身在画面内／不要改服饰」，抽 44 帧循环段（43–86，@24fps = 1.83s）经 `video-to-webm.py` 转透明 VP9（384×416，alpha 覆盖 0.438，64KB）。实测视频层与本体同尺寸同底边，帽子小柄与双脚都在画面内；旧素材（硅基流动 30 帧 @16fps / 1.88s）已废弃。
+```
+python3 /tmp/maxtube/gen.py cheer --ref-file /tmp/maxtube/ref_green_v3.png   # 提交 + 轮询 + 下载 mp4
+python3 scripts/video-to-webm.py --video /tmp/maxtube/out/cheer.mp4 --action cheer --start 43 --frames 44 --fps 24
+```
+
+2026-11-04（位图形象 2 只 + 原生动作视频）：`npm run verify` 在 1440×900、390×844、420×420 三个视口全绿（**147/147**，报告 `docs/verification/pet/verify-ui.json`，截图新增 `pet-pilot-cheer.png`）；单元测试 **20/20**（`npm test`）。这一版把 `cheer` 从胶片条换成**透明 WebM 视频**（`<video>` 直接播，解码失败自动回退胶片条），验证了这条「专属动作」路线可行：视频层与位图本体同尺寸同底边（实测 128×138 / 底边 809 一致）、`currentTime` 在走、时长 1.876s、动作结束自动暂停收起。这一轮修掉一个真 bug：`applySettings()` 换形象时只取 `holder.firstElementChild`，而 `petSpriteMarkup()` 返回「本体 + 胶片条」两个兄弟节点，胶片条从来没进 DOM —— 所以原生动作在实际页面里一次都没播过（单测只查字符串，查不出来）。修法：换形象前先 `clearNative()`，再按 `.dsh-pet-svg, .dsh-pet-sprite, .dsh-pet-clip, .dsh-pet-video, .dsh-pet-image, .dsh-pet-anim` 收集旧节点，整体插入新节点后统一删旧（加视频层时又漏了一次 `.dsh-pet-video`，表现是切角色后视频层叠成两份 —— 已补进选择器并加了断言）。回归断言（13 条）覆盖：动作层三层各一份（本体 / 胶片条 / 视频）、设置里 lulu + pilot 两张卡、pilot 图集与 lulu 不同且闲时两层都隐藏、pilot 鼓掌走视频模式（`data-clip-active=video`、`src` 是 `data:video/webm`、未暂停且 `currentTime > 0`、时长 1.876s）、视频层与本体同尺寸同底边、道具层与装扮层一起让位、演完视频暂停收起、切回 lulu 不叠层、lulu 同样走原生鼓掌、hop 没有原生素材时退回 SVG 表演（不挂视频也不挂胶片条）、关掉动效时不放视频而是退回胶片条定格第一帧（`prefers-reduced-motion` 同理）。单测同名用例扩展成「胶片条与透明视频都只接合格素材」：视频源文件必须在 `assets/` 里、大小 > 1KB、时长与动作差不超过 0.3s、构建产物里必须有内联的 `data:video/webm;base64,`。注：验收脚本要反复 reload 页面，`[ui-cordis] reading the Cordis inventory failed … Failed to fetch` 会随机冒出来（DSH 自身插件拉插件清单的网关抖动，非本插件）；已在「无意外报错」断言里按精确文案放过，其余报错照旧严格。
+
+2026-11-02（首轮）：`npm run verify` 在 1440×900、390×844 与一个 420×420 的小视口跑，**133/133** 全绿，报告与截图在 `docs/verification/pet/`（`pet-1440x900.png`、`pet-390x844.png`、`pet-lulu-1440x900.png`、`pet-huge-1440x900.png`、`pet-menu-top-right-1440x900.png`）。断言覆盖：**装扮**（默认红围巾、换圣诞帽是替换不是叠加、眼镜对得上眼睛、右键「换装扮」循环并显示当前装扮）、launch token 能进页面、样式在 head 末尾、默认形象（新用户 = 位图噜噜）/落点/尺寸、CSS token 生效、点击弹气泡且亲密度 +1、右键菜单三组动作与 12 个动作可点播（拜年 → `data-act=bow` + 2.2s、放烟花 → 14 个火花）、设置页 12 个动作试演按钮、点击音效真实输出峰值 0.837、**右键菜单落点回归**（把宠物摆到右上角/右下角/小视口 420×420，菜单四边都必须在视口内、条目仍可点、点「摸摸」真生效）、设置浮层回归（点内部不关闭、关掉再重开仍不关闭、点外部才关闭）、大小四档（含超大 200px 按 200/208 等比放大）、拖拽回归（横拖 180px / 竖直拖 220px 都不回弹、拖到左边缘才吸附且保住纵向位置、刷新后位置保持、可恢复右下角）、16 向注视（正左/正上各验一格、注视时停 keyframes、进 dead zone 与静止 2.2s 回 idle）、手机端默认隐藏与开关后出现、无意外控制台报错。
 
 2026-11-02 第二轮（活动流 / 预警 / 日记 / 图集）：`npm run verify` 重启前 **128/128**（`/pet/**` 404 的降级路径通过）；删掉矢量形象、菜单改为视口内落点后为 **126/126**（部分矢量/形象断言合并）。单元测试 **16/16**，另有 host 侧 `test/host.test.mjs` **16/16**（`node --test test/host.test.mjs`）。新增断言：`data-live` 只在 on/off 之间、`data-usage` 取值合法、占用条元素存在、`/pet/activity` 离线时降级为 off 且不报错、设置里活动流状态行 / 每日日记块 / 图集导入入口 / 预警阈值默认 70-88；在线时额外验 `/pet/activity` 快照合法、`data-live=on`、`/pet/diary` 返回可读短句。新增单测：优先级表与仲裁、host 状态映射（approval/error→alert、tool→thinking、done→celebrate）、工具名→相位（todo_write 判"排计划"、web_search 判"上网查"）、时长格式化、上下文等级阈值、回合文案成败、轮询器（水位 after=7 前移、连续失败降级）、标题闪烁恢复原文、图集注册（非法 id/行数/mime 被拒、重复注册幂等、CSS 里出现 `/pet/skins/<id>.webp`）。
 
-单元测试（`npm test`，18 个用例）覆盖：自备形象流水线（图片 → 抠底/裁边/缩放 → 内联数据模块）、包名/版本/补丁 id 一致、矢量角色配色 JS↔CSS 逐 token 对齐、位图协议（8 列×11 行、9 动作行号与帧数、慢速 idle = 1.8×、状态→动作投影、拖拽左右朝向、生成 10 组 keyframes、素材体积预算与 data URI 内联）、中英键集合相同、store 等级数学与持久化与跨天连续、状态优先级与事件检测（Map/对象两种快照）、bundle 形状与导出名、动作库（id 唯一 / 每类非空 / 时长 1–3s / 每个 effect 都有对应关键帧与 `data-act` 规则 / 粒子数量与取整 / 空闲自演只在轻动作池里）。
+单元测试（`npm test`，20 个用例）覆盖：自备形象流水线（图片 → 抠底/裁边/缩放 → 内联数据模块）、包名/版本/补丁 id 一致、矢量角色配色 JS↔CSS 逐 token 对齐、位图协议（8 列×11 行、9 动作行号与帧数、慢速 idle = 1.8×、状态→动作投影、拖拽左右朝向、生成 10 组 keyframes、素材体积预算与 data URI 内联）、中英键集合相同、store 等级数学与持久化与跨天连续、状态优先级与事件检测（Map/对象两种快照）、bundle 形状与导出名、动作库（id 唯一 / 每类非空 / 时长 1–3s / 每个 effect 都有对应关键帧与 `data-act` 规则 / 粒子数量与取整 / 空闲自演只在轻动作池里）。
 
 ## 已知边界
 
 - 自备的静态图 / 动图都是**本机自用**素材：静态只有呼吸+倾斜+阴影，动图只有一条循环（无法分状态）。
 
 - **用户自定义图片形象**：已支持（`scripts/import-lulu.py` + `kind: 'image'` 分支，见「自备形象」）；静态画只有呼吸/倾斜跟随，没有逐帧动作；内置位图形象已经有通用分支：在 `client-src/characters.js` 的 `PET_CHARACTERS` 里加一项 `{ kind: 'sprite', sprite: { url: '__DSH_PET_ASSET_<NAME>__', frameW, frameH, cols, rows, actions, states } }`，把图集放到 `assets/<name>.webp`，构建会自动内联并校验体积。位图噜噜已经接了第 9–10 行的 16 向注视帧；以后再收位图形象若要注视，加 `sprite.gaze = { rows: [9, 10], count: 16, originDeg: -90, stepDeg: 22.5, deadZonePx: 28 }` 即可。
-- 动作是**程序化表演**（CSS 关键帧 + DOM 粒子），不是逐帧视频：所以动作数比 `dsh-whale-pet` 的 95 个少，也因此没有素材体积和授权问题。想加动作：在 `client-src/actions.js` 的 `PET_ACTIONS` 里加一项 + 在 `styles/pet.css` 写对应 `@keyframes dsh-pet-act-<effect>` 与 `[data-act='<effect>']` 规则，单测会检查两者是否都写了。
+- 动作主体仍是**程序化表演**（CSS 关键帧 + DOM 粒子），只有 `cheer` 接了原生动作视频（透明 WebM + 胶片条回退）：所以动作数比 `dsh-whale-pet` 的 95 个少，也因此没有素材体积和授权问题。视频现在内联在 bundle 里（52KB）；要全量迁移（12 个动作）得改成宿主静态路由按需加载 —— 那需要重启 DSH 才能生效，而且每条约 0.3MB，别再往 bundle 里塞。想加动作：在 `client-src/actions.js` 的 `PET_ACTIONS` 里加一项 + 在 `styles/pet.css` 写对应 `@keyframes dsh-pet-act-<effect>` 与 `[data-act='<effect>']` 规则，单测会检查两者是否都写了。
+- **生成素材的一致性还不够**：图生视频会轻微改比例（头偏大）、抹掉小细节（南瓜帽的柄变平顶），`hop` 的片段甚至整段出画，所以只接了鼓掌一个动作。要全面替换成「专属动作」，得先解决生成侧的镜头/比例锁定（或改用逐帧重绘、把动作重定向到原图集比例），并且需要重新拿到视频生成额度 —— 剩下 10 个动作提交时全部返回 `HTTP 402 Payment Required`。
+- `assets/clip-hop.webp` 是**被拒的草稿**（head/脚出画、全程头肩特写），留在仓库里供以后对比，不参与构建（实际页面效果见 `docs/verification/pet/pet-hop-rejected-page.png`：只剩头肩，帽子与脚都在画外）；`images/generated/` 与 `images/generated-i2i/`（换背景/换场景实验）也没有接入任何代码路径。
 - 宠物只有一套「行为人格」，没有多套语音/性格包。
 - 没有余额/用量展示（按需求只要纯宠物功能，不做钱包）。
 - 音效是合成音，不是打包的音频文件；想要更丰富需要引入素材与授权。
