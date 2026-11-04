@@ -29,7 +29,7 @@ const PET_LEVEL_STEP = 50
  */
 const PET_DEFAULT_SETTINGS = {
   enabled: true,
-  character: 'lulu',
+  character: 'pilot',
   size: 104,
   dock: 'right',
   /** 自由拖拽落点（%），null 表示用 dock 的默认角 */
@@ -49,6 +49,21 @@ const PET_DEFAULT_SETTINGS = {
   outfit: 'scarf',
   focusWorkMin: 25,
   focusBreakMin: 5,
+}
+
+
+/** 一次性迁移：2026-11-05 起默认形象从经典噜噜换成图生视频版 pilot。 */
+const PET_DEFAULT_CHARACTER_MIGRATION_KEY = 'dsh-pet:migrate:v1-default-pilot'
+
+function petMigrateDefaultCharacter(settings, stored) {
+  try {
+    if (!stored || localStorage.getItem(PET_DEFAULT_CHARACTER_MIGRATION_KEY)) return settings
+    localStorage.setItem(PET_DEFAULT_CHARACTER_MIGRATION_KEY, '1')
+    // 老默认就是 lulu；只有停在老默认上的用户跟随新默认，自己选过别的形象的不动
+    return stored.character === 'lulu' ? { ...settings, character: 'pilot' } : settings
+  } catch {
+    return settings
+  }
 }
 
 function petReadJson(key) {
@@ -94,7 +109,8 @@ function petDayDiff(from, to) {
  */
 function petCreateStore() {
   const listeners = new Set()
-  let settings = { ...PET_DEFAULT_SETTINGS, ...(petReadJson(PET_SETTINGS_KEY) ?? {}) }
+  const storedSettings = petReadJson(PET_SETTINGS_KEY)
+  let settings = petMigrateDefaultCharacter({ ...PET_DEFAULT_SETTINGS, ...(storedSettings ?? {}) }, storedSettings)
   let growth = {
     affinity: 0,
     pets: 0,

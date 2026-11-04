@@ -147,8 +147,17 @@ function petSpritePack(url, { rows = 9, gaze = false } = {}) {
  */
 const PET_CHARACTERS = [
   {
-    id: 'lulu',
+    // 默认形象（2026-11-05 起）：idle 行是图生视频抽帧的原生呼吸，其余动作行沿用原图集；
+    // 12 个专属动作全部走透明 WebM 视频（见 PET_ACTION_VIDEOS）。
+    id: 'pilot',
     label: { zh: '噜噜', en: 'Lulu' },
+    kind: 'sprite',
+    sprite: petSpritePack('__DSH_PET_ASSET_LULU_IDLE_V2__', { rows: 11, gaze: true }),
+  },
+  {
+    // 经典噜噜：上游原版图集（idle 是手绘 6 帧），保留给喜欢原版待机的人
+    id: 'lulu',
+    label: { zh: '噜噜（经典）', en: 'Lulu (classic)' },
     kind: 'sprite',
     // 11 行图集：第 0–8 行是 9 组动作，第 9–10 行是 16 向注视帧
     sprite: petSpritePack('__DSH_PET_ASSET_LULU__', { rows: 11, gaze: true }),
@@ -158,7 +167,7 @@ const PET_CHARACTERS = [
 /**
  * 用户自备形象（可选）：`generated-images.js` 里的 PET_USER_IMAGES。
  *
- * 素材来自 /root/workspace/lulu-images/，经 scripts/import-lulu.py 抠底、裁边、
+ * 素材来自 /root/workspace/plugins/dsh-pet/images/，经 scripts/import-lulu.py 抠底、裁边、
  * 缩到 320px 后以 data URI 内联（插件仍是单文件部署，不加 host 静态路由）。
  * 这类形象是**静态画**：不假装有 9 组动作，只做呼吸起伏 + 轻微视线跟随，
  * 所以单独走 `kind: 'image'` 分支，和矢量/位图并列。
@@ -520,10 +529,115 @@ function petSpriteGazeCell(id, index) {
 function petSpriteMarkup(id) {
   const sprite = petSprite(id)
   if (!sprite) return ''
+  // 后两层是「原生动作」：优先用一条透明视频（<video>），播不了再退回胶片条
+  // （横向 WebP + 逐帧 background-position）。都是动作期间盖住位图本体。
   return `<div class="dsh-pet-sprite" data-sprite="${id}" data-action="idle" aria-hidden="true"></div>`
+    + `<div class="dsh-pet-clip" data-sprite-clip="${id}" aria-hidden="true"></div>`
+    + `<video class="dsh-pet-video" data-sprite-video="${id}" muted playsinline preload="none" aria-hidden="true"></video>`
 }
 
 /** 设置页卡片里的小预览（矢量走 SVG，位图取图集第一格，自备图直接缩略）。 */
+/**
+ * 原生动作片段表：actionId → 横向胶片条。
+ *
+ * 渲染层在动作期间把它铺在角色位置上（隐藏位图本体和 SVG 道具），
+ * 逐帧推 background-position —— 和位图动作同一套机制，不需要 GIF 解码。
+ */
+// 12 帧 × 150ms = 1800ms，正好等于「鼓掌」动作时长（actions.js 里 seconds: 1.8）
+const CLIP_CHEER = { url: '__DSH_PET_ASSET_CLIP_CHEER__', frameW: 192, frameH: 208, frames: 12, stepMs: 150 }
+
+// 「蹦跶」的 i2v 片段（assets/clip-hop.webp）没接进来：模型没守住「大小不变」，
+// 12 帧全是头肩大特写、帽子与脚出画，铺上去比 SVG 组件更像 bug。等重生成合格素材再接，
+// 在那之前 hop 继续走程序化表演（actions.js 的 effect），不影响 data-act 与粒子效果。
+const PET_ACTION_CLIPS = {
+  lulu: { cheer: CLIP_CHEER },
+  pilot: { cheer: CLIP_CHEER },
+}
+
+function petActionClip(characterId, actionId) {
+  const clips = PET_ACTION_CLIPS[characterId]
+  if (!clips) return null
+  return clips[actionId] ?? null
+}
+
+function petHasClips(characterId) {
+  return Boolean(PET_ACTION_CLIPS[characterId])
+}
+
+/**
+ * 原生动作视频表：actionId → 一条带 alpha 的 VP9 WebM（由 scripts/video-to-webm.py 生成）。
+ *
+ * 这是「专属动作」的正确形态：帧率/时长不再受 8×11 图集协议约束，浏览器用 <video>
+ * 直接播。画布按单元格 192×208 的 2 倍（384×416）输出，角色高 396、基线 406，所以
+ * 渲染层只要把它铺成 192×208 的层，就和位图本体严丝合缝对齐。
+ * 播不了（浏览器不支持 alpha WebM / 解码失败）时自动退回 PET_ACTION_CLIPS 的胶片条。
+ */
+
+// 原生动作视频：一动作一条透明 VP9 WebM（MiniMax-Video-H3-Max 480P/5s 绿幕 → video-to-webm.py）。
+// 画布 384×416（= 单格 192×208 的 2 倍），角色高 396 / 脚底基线 406，与 .dsh-pet-sprite 同构；
+// seconds 贴近 actions.js 里该动作时长（渲染层按动作时长收尾，超出部分会被截掉）。
+const PET_ACTION_VIDEOS = {
+  lulu: {
+    newyear: { url: '__DSH_PET_ASSET_ANIM_NEWYEAR__', seconds: 2.21 },
+    lion: { url: '__DSH_PET_ASSET_ANIM_LION__', seconds: 2.58 },
+    fireworks: { url: '__DSH_PET_ASSET_ANIM_FIREWORKS__', seconds: 2.42 },
+    redpacket: { url: '__DSH_PET_ASSET_ANIM_REDPACKET__', seconds: 2.21 },
+    fu: { url: '__DSH_PET_ASSET_ANIM_FU__', seconds: 2.42 },
+    dumpling: { url: '__DSH_PET_ASSET_ANIM_DUMPLING__', seconds: 2.21 },
+    shy: { url: '__DSH_PET_ASSET_ANIM_SHY__', seconds: 1.79 },
+    cheer: { url: '__DSH_PET_ASSET_ANIM_CHEER__', seconds: 1.83 },
+    dizzy: { url: '__DSH_PET_ASSET_ANIM_DIZZY__', seconds: 2.0 },
+    spin: { url: '__DSH_PET_ASSET_ANIM_SPIN__', seconds: 1.21 },
+    roll: { url: '__DSH_PET_ASSET_ANIM_ROLL__', seconds: 1.58 },
+    hop: { url: '__DSH_PET_ASSET_ANIM_HOP__', seconds: 1.21 },
+  },
+  pilot: {
+    newyear: { url: '__DSH_PET_ASSET_ANIM_NEWYEAR__', seconds: 2.21 },
+    lion: { url: '__DSH_PET_ASSET_ANIM_LION__', seconds: 2.58 },
+    fireworks: { url: '__DSH_PET_ASSET_ANIM_FIREWORKS__', seconds: 2.42 },
+    redpacket: { url: '__DSH_PET_ASSET_ANIM_REDPACKET__', seconds: 2.21 },
+    fu: { url: '__DSH_PET_ASSET_ANIM_FU__', seconds: 2.42 },
+    dumpling: { url: '__DSH_PET_ASSET_ANIM_DUMPLING__', seconds: 2.21 },
+    shy: { url: '__DSH_PET_ASSET_ANIM_SHY__', seconds: 1.79 },
+    cheer: { url: '__DSH_PET_ASSET_ANIM_CHEER__', seconds: 1.83 },
+    dizzy: { url: '__DSH_PET_ASSET_ANIM_DIZZY__', seconds: 2.0 },
+    spin: { url: '__DSH_PET_ASSET_ANIM_SPIN__', seconds: 1.21 },
+    roll: { url: '__DSH_PET_ASSET_ANIM_ROLL__', seconds: 1.58 },
+    hop: { url: '__DSH_PET_ASSET_ANIM_HOP__', seconds: 1.21 },
+  },
+}
+
+function petActionVideo(characterId, actionId) {
+  const videos = PET_ACTION_VIDEOS[characterId]
+  if (!videos) return null
+  return videos[actionId] ?? null
+}
+
+function petHasVideos(characterId) {
+  return Boolean(PET_ACTION_VIDEOS[characterId])
+}
+
+/** 胶片条需要的 CSS：图片、background-size（N 格）与逐帧 keyframes。 */
+function petClipCss() {
+  const blocks = []
+  for (const [characterId, clips] of Object.entries(PET_ACTION_CLIPS)) {
+    for (const [actionId, clip] of Object.entries(clips)) {
+      const total = clip.stepMs * clip.frames
+      const name = `dsh-pet-clip-${characterId}-${actionId}`
+      const frames = []
+      for (let i = 0; i < clip.frames; i += 1) {
+        const at = ((i * clip.stepMs) / total) * 100
+        frames.push(`  ${at.toFixed(3)}% { background-position: ${-i * clip.frameW}px 0; }`)
+      }
+      blocks.push(`@keyframes ${name} {\n${frames.join('\n')}\n}`)
+      blocks.push(
+        `[data-char='${characterId}'] .dsh-pet-clip[data-clip='${actionId}'] { background-image: url("${clip.url}"); background-size: ${clip.frames * 100}% 100%; animation-name: ${name}; animation-duration: ${total}ms; }`,
+      )
+    }
+  }
+  return blocks.join('\n')
+}
+
 function petPreviewMarkup(id) {
   if (petIsSprite(id)) return '<span class="dsh-pet-sprite-thumb" aria-hidden="true"></span>'
   if (petIsAnim(id)) return '<span class="dsh-pet-anim-thumb" aria-hidden="true"></span>'

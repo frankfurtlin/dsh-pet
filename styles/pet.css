@@ -110,6 +110,73 @@
   animation-fill-mode: both;
 }
 
+/**
+ * 原生动作胶片条：动作期间盖在位图本体上，逐帧推 background-position。
+ * 尺寸/缩放规则与 .dsh-pet-sprite 完全一致，切动作时角色不会跳大小。
+ * 图片与 keyframes 由 characters.js 的 petClipCss() 运行时注入。
+ */
+.dsh-pet-clip {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 192px;
+  height: 208px;
+  margin-left: -96px;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  transform: scale(var(--pet-sprite-scale));
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 16%));
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+  display: none;
+}
+
+/**
+ * 原生动作视频：一段带 alpha 的透明 WebM，尺寸/缩放规则与 .dsh-pet-sprite 一致
+ * （画布按 2 倍超采样输出，所以铺成 192×208 的层就对得齐）。解码失败时由脚本
+ * 退回 .dsh-pet-clip 的胶片条。
+ */
+.dsh-pet-video {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 192px;
+  height: 208px;
+  margin-left: -96px;
+  transform: scale(var(--pet-sprite-scale));
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 8px rgb(0 0 0 / 16%));
+  display: none;
+}
+
+/* 有原生动作时：动作层顶掉本体和道具，避免「原生动作 + SVG 小组件」叠在一起 */
+[data-dsh-pet][data-clip-active='video'] .dsh-pet-video {
+  display: block;
+}
+
+[data-dsh-pet][data-clip-active='strip'] .dsh-pet-clip {
+  display: block;
+}
+
+[data-dsh-pet][data-clip-active] .dsh-pet-sprite {
+  visibility: hidden;
+}
+
+[data-dsh-pet][data-clip-active] .dsh-pet-prop-layer,
+[data-dsh-pet][data-clip-active] .dsh-pet-outfit-layer {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-pet-clip {
+    animation-play-state: paused;
+  }
+}
+
 /* 位图角色本体：脚下留一点点空，气泡和进度环仍按方块定位 */
 [data-dsh-pet][data-char='lulu'] .dsh-pet-figure {
   cursor: grab;

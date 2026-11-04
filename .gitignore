@@ -12,3 +12,6 @@ docs/verification/
 # Python 字节码（scripts/*.py）
 __pycache__/
 *.pyc
+
+# 素材工作区（62MB：抖音实况图 / 绿幕源视频 / 生成的场景图），不进仓库
+images/

@@ -132,6 +132,9 @@ async function main() {
     // 「Failed to fetch」（网页端与 /api 的探测路径差异导致），与本插件无关，
     // 但会随机让「无意外报错」这条断言变红 —— 单独放过，其余照旧严格。
     if (/cordis-client-runner/.test(text) && /syncInspectManifest failed/.test(text)) return
+    // 同一类偶发：验收脚本要反复 reload 页面，dsh-client-ui-cordis 每次启动都会拉一次
+    // 插件清单，网关偶尔回 Failed to fetch（与宠物插件无关），同样放过。
+    if (/\[ui-cordis\] reading the Cordis inventory failed/.test(text)) return
     if (/\/api\/dsh-passwords\/state/.test(text) || /\/gateway\/api\/messages/.test(text)) return
     consoleErrors.push(text)
   })
@@ -343,6 +346,17 @@ async function main() {
       await page.waitForFunction(() => Boolean(document.querySelector('[data-dsh-pet] .dsh-pet-sprite')), null, { timeout: 30000 })
       await page.waitForTimeout(900)
 
+      // 有了原生动作视频后，道具层是「视频不可用/关掉动效」时的回落路径。
+      // 关掉动效再逐个点动作，验证回落时手里真的有东西、姿态标记也在。
+      await page.evaluate(() => {
+        const key = 'dsh-pet:settings:v1'
+        const current = JSON.parse(localStorage.getItem(key) ?? '{}')
+        localStorage.setItem(key, JSON.stringify({ ...current, motion: 'off' }))
+      })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.waitForFunction(() => Boolean(document.querySelector('[data-dsh-pet] .dsh-pet-sprite')), null, { timeout: 30000 })
+      await page.waitForTimeout(900)
+
       const propCases = [
         { id: 'lion', prop: 'lion', pose: 'lift', detail: '鬃毛花瓣', selector: '.dsh-pet-lion-petal', min: 20 },
         { id: 'newyear', prop: 'clasp', pose: 'clasp', detail: '抱在一起的拳头', selector: '.dsh-pet-fist', min: 2 },
@@ -390,11 +404,11 @@ async function main() {
       })
       check(viewport.width, '动作演完道具与姿态都收干净', propCleared.prop === null && propCleared.pose === null && propCleared.html === '', JSON.stringify(propCleared))
 
-      // 复原成默认位图噜噜，后面的用例按默认形象断言
+      // 复原成默认位图噜噜（动效开回来），后面的用例按默认形象断言
       await page.evaluate(() => {
         const key = 'dsh-pet:settings:v1'
         const current = JSON.parse(localStorage.getItem(key) ?? '{}')
-        localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu', size: 104 }))
+        localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu', size: 104, motion: 'on' }))
       })
       await page.reload({ waitUntil: 'domcontentloaded' })
       await page.waitForFunction(() => Boolean(document.querySelector('[data-dsh-pet] .dsh-pet-figure')), null, { timeout: 30000 })
@@ -411,6 +425,7 @@ async function main() {
       return {
         visible: !!popover && popover.getBoundingClientRect().width > 200,
         characters: popover.querySelectorAll('[data-testid="pet-characters"] [data-char]').length,
+        charIds: [...popover.querySelectorAll('[data-testid="pet-characters"] [data-char]')].map((node) => node.getAttribute('data-char')),
         hasEnable: !!popover.querySelector('[data-testid="pet-enable"]'),
         hasSound: !!popover.querySelector('[data-testid="pet-sound"]'),
         hasExport: !!popover.querySelector('[data-testid="pet-export"]'),
@@ -422,8 +437,8 @@ async function main() {
       }
     })
     check(viewport.width, '设置浮层可见', settingsShape.visible)
-    // 用户可以自己导入形象/动图（u-* / a-*），所以只要求「有 lulu 且没有矢量」
-    check(viewport.width, '设置里有噜噜形象（矢量版已删除）', settingsShape.characters >= 1, `${settingsShape.characters} 个`)
+    // 用户可以自己导入形象/动图（u-* / a-*），内置的还有 lulu + pilot（图生视频试验形象）
+    check(viewport.width, '设置里有两只噜噜（默认 pilot + 经典 lulu）', settingsShape.characters >= 2 && settingsShape.charIds.includes('lulu') && settingsShape.charIds.includes('pilot'), settingsShape.charIds.join(','))
     check(viewport.width, '设置含启用/音效/导出', settingsShape.hasEnable && settingsShape.hasSound && settingsShape.hasExport)
     check(viewport.width, '设置里有 12 个动作可试演', settingsShape.actions === 12, `${settingsShape.actions} 个`)
     check(
@@ -433,7 +448,7 @@ async function main() {
       JSON.stringify(settingsShape.volume),
     )
 
-    // 形象选择区：现在只剩噜噜一张卡，点它仍要立刻生效（不能把宠物点没了）
+    // 形象区：lulu 与 pilot 两张内置卡，点卡要立刻生效（不能把宠物点没了）
     await page.locator('.dsh-pet-popover [data-testid="pet-characters"] [data-char="lulu"]').first().click()
     await page.waitForTimeout(400)
     const afterSwitch = await page.evaluate(() => {
@@ -445,7 +460,7 @@ async function main() {
         cards: document.querySelectorAll('.dsh-pet-popover [data-testid="pet-characters"] [data-char]').length,
       }
     })
-    check(viewport.width, '形象区至少有一张卡（用户自备形象会合法增加）', afterSwitch.cards >= 1, `卡片数=${afterSwitch.cards}`)
+    check(viewport.width, '形象区有两张内置卡（lulu + pilot，用户自备形象会合法增加）', afterSwitch.cards >= 2, `卡片数=${afterSwitch.cards}`)
     check(viewport.width, '点形象卡后仍然是位图噜噜（不会点没）', afterSwitch.char === 'lulu' && afterSwitch.render === 'sprite' && afterSwitch.sprite, `data-char=${afterSwitch.char} render=${afterSwitch.render}`)
 
     await page.keyboard.press('Escape')
@@ -628,7 +643,7 @@ async function main() {
     char: document.querySelector('[data-dsh-pet]')?.getAttribute('data-char'),
     render: document.querySelector('[data-dsh-pet]')?.getAttribute('data-render'),
   }))
-  check(WIDTHS[0].width, '新用户默认形象是噜噜（位图）', firstRun.char === 'lulu' && firstRun.render === 'sprite', `data-char=${firstRun.char} data-render=${firstRun.render}`)
+  check(WIDTHS[0].width, '新用户默认形象是噜噜（图生视频 pilot）', firstRun.char === 'pilot' && firstRun.render === 'sprite', `data-char=${firstRun.char} data-render=${firstRun.render}`)
 
   await page.evaluate(() => {
     const key = 'dsh-pet:settings:v1'
@@ -1051,6 +1066,247 @@ async function main() {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForSelector('[data-dsh-pet]', { timeout: 30000 })
   await page.waitForTimeout(400)
+
+  // ── 原生动作：透明 WebM 视频（12 个动作全部一动作一条视频）─────────────────
+  // 位图形象原来靠 SVG 手臂/道具「拼」动作。现在优先铺一条带 alpha 的动作视频
+  // （<video> 直接播，不受 8×11 图集协议的帧数限制），解码失败才退回横向胶片条。
+  // 注意 petSpriteMarkup 一次返回三个兄弟节点（本体 + 胶片条 + 视频），渲染层曾经
+  // 只挂第一个，导致动作层永远进不了 DOM —— 下面就是这条的回归护栏。
+  const playNativeAction = async (id) => {
+    await page.locator('[data-dsh-pet] .dsh-pet-figure').first().click({ button: 'right' })
+    await page.waitForTimeout(200)
+    await page.locator(`[data-dsh-pet] [data-action-id="${id}"]`).first().click()
+    await page.waitForTimeout(340)
+    return page.evaluate(() => {
+      const root = document.querySelector('[data-dsh-pet]')
+      const clip = root.querySelector('.dsh-pet-clip')
+      const video = root.querySelector('.dsh-pet-video')
+      const sprite = root.querySelector('.dsh-pet-sprite')
+      const style = clip ? getComputedStyle(clip) : null
+      const videoStyle = video ? getComputedStyle(video) : null
+      const layerDisplay = (selector) => {
+        const node = root.querySelector(selector)
+        return node ? getComputedStyle(node).display : null
+      }
+      const box = (node) => (node ? node.getBoundingClientRect() : null)
+      const spriteBox = box(sprite)
+      const videoBox = box(video)
+      return {
+        char: root.getAttribute('data-char'),
+        act: root.getAttribute('data-act'),
+        mode: root.getAttribute('data-clip-active'),
+        active: root.hasAttribute('data-clip-active'),
+        clipId: clip?.getAttribute('data-clip') ?? null,
+        display: style?.display ?? null,
+        name: style?.animationName ?? null,
+        duration: style?.animationDuration ?? null,
+        size: style?.backgroundSize ?? null,
+        videoDisplay: videoStyle?.display ?? null,
+        videoSrc: (video?.getAttribute('src') ?? '').slice(0, 24),
+        videoPaused: video?.paused ?? null,
+        videoTime: video?.currentTime ?? null,
+        videoDuration: video?.duration ?? null,
+        videoW: videoBox ? Math.round(videoBox.width) : null,
+        videoH: videoBox ? Math.round(videoBox.height) : null,
+        videoBottom: videoBox ? Math.round(videoBox.bottom) : null,
+        spriteW: spriteBox ? Math.round(spriteBox.width) : null,
+        spriteH: spriteBox ? Math.round(spriteBox.height) : null,
+        spriteBottom: spriteBox ? Math.round(spriteBox.bottom) : null,
+        spriteVisibility: sprite ? getComputedStyle(sprite).visibility : null,
+        prop: layerDisplay('.dsh-pet-prop-layer'),
+        outfit: layerDisplay('.dsh-pet-outfit-layer'),
+      }
+    })
+  }
+
+  const defaultRender = await page.evaluate(() => ({
+    char: document.querySelector('[data-dsh-pet]').getAttribute('data-char'),
+    clips: document.querySelectorAll('[data-dsh-pet] .dsh-pet-clip').length,
+    videos: document.querySelectorAll('[data-dsh-pet] .dsh-pet-video').length,
+    atlas: getComputedStyle(document.querySelector('[data-dsh-pet] .dsh-pet-sprite')).backgroundImage,
+  }))
+  check(
+    WIDTHS[0].width,
+    '位图形象挂载了原生动作层（本体 + 胶片条 + 视频各一层）',
+    defaultRender.clips === 1 && defaultRender.videos === 1,
+    JSON.stringify({ char: defaultRender.char, clips: defaultRender.clips, videos: defaultRender.videos }),
+  )
+
+  // 切到经典 lulu：手绘图集是另一张 data URI，顺手记住它跟默认 pilot 对比
+  await page.evaluate(() => {
+    const key = 'dsh-pet:settings:v1'
+    const current = JSON.parse(localStorage.getItem(key) ?? '{}')
+    localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu', size: 136, liveFeed: false }))
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-clip', { state: 'attached', timeout: 30000 })
+  await page.waitForTimeout(400)
+  const luluAtlas = await page.evaluate(() => getComputedStyle(document.querySelector('[data-dsh-pet] .dsh-pet-sprite')).backgroundImage)
+  check(WIDTHS[0].width, '经典 lulu 也能切过去，图集与默认 pilot 不同', luluAtlas !== defaultRender.atlas, `${luluAtlas.slice(0, 40)}…`)
+
+  // 切到 pilot：图集换成图生视频 idle 版
+  await page.evaluate(() => {
+    const key = 'dsh-pet:settings:v1'
+    const current = JSON.parse(localStorage.getItem(key) ?? '{}')
+    localStorage.setItem(key, JSON.stringify({ ...current, character: 'pilot', size: 136, liveFeed: false }))
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-clip', { state: 'attached', timeout: 30000 })
+  await page.waitForTimeout(500)
+  const pilotIdle = await page.evaluate(() => {
+    const root = document.querySelector('[data-dsh-pet]')
+    const sprite = root.querySelector('.dsh-pet-sprite')
+    const clip = root.querySelector('.dsh-pet-clip')
+    return {
+      char: root.getAttribute('data-char'),
+      render: root.getAttribute('data-render'),
+      action: sprite.getAttribute('data-action'),
+      atlas: getComputedStyle(sprite).backgroundImage,
+      clipDisplay: getComputedStyle(clip).display,
+      videoDisplay: getComputedStyle(root.querySelector('.dsh-pet-video')).display,
+      clips: root.querySelectorAll('.dsh-pet-clip').length,
+      videos: root.querySelectorAll('.dsh-pet-video').length,
+    }
+  })
+  check(
+    WIDTHS[0].width,
+    '设置里的 pilot 形象能切过去（图集渲染在跑 idle）',
+    pilotIdle.char === 'pilot' && pilotIdle.render === 'sprite' && pilotIdle.action === 'idle' && pilotIdle.clips === 1,
+    JSON.stringify({ char: pilotIdle.char, render: pilotIdle.render, action: pilotIdle.action, clips: pilotIdle.clips }),
+  )
+  check(WIDTHS[0].width, 'pilot 用的是图生视频的新图集（idle 行与 lulu 不同）', pilotIdle.atlas !== luluAtlas, `${pilotIdle.atlas.slice(0, 48)}… vs ${luluAtlas.slice(0, 48)}…`)
+  check(
+    WIDTHS[0].width,
+    'pilot 闲时原生动作层都隐藏（不挡住本体）',
+    pilotIdle.clipDisplay === 'none' && pilotIdle.videoDisplay === 'none' && pilotIdle.clips === 1 && pilotIdle.videos === 1,
+    JSON.stringify({ clip: pilotIdle.clipDisplay, video: pilotIdle.videoDisplay, clips: pilotIdle.clips, videos: pilotIdle.videos }),
+  )
+
+  const pilotCheer = await playNativeAction('cheer')
+  check(
+    WIDTHS[0].width,
+    'pilot 鼓掌：走原生动作视频（不是 SVG 组件）',
+    pilotCheer.mode === 'video' && pilotCheer.videoDisplay === 'block' && pilotCheer.clipId === null,
+    JSON.stringify({ mode: pilotCheer.mode, video: pilotCheer.videoDisplay, clipId: pilotCheer.clipId }),
+  )
+  check(
+    WIDTHS[0].width,
+    'pilot 鼓掌：透明 WebM 已加载并在播',
+    /^data:video\/webm/.test(pilotCheer.videoSrc) && pilotCheer.videoPaused === false && (pilotCheer.videoTime ?? 0) > 0.05,
+    JSON.stringify({ src: pilotCheer.videoSrc, paused: pilotCheer.videoPaused, t: pilotCheer.videoTime, dur: pilotCheer.videoDuration }),
+  )
+  check(
+    WIDTHS[0].width,
+    'pilot 鼓掌：视频时长贴合动作（1.8s 动作配 1.83s 片段）',
+    Math.abs((pilotCheer.videoDuration ?? 0) - 1.83) < 0.15,
+    `duration=${pilotCheer.videoDuration}`,
+  )
+  check(
+    WIDTHS[0].width,
+    'pilot 鼓掌：视频层与位图本体同尺寸、同底边（换动作不跳位）',
+    pilotCheer.videoW === pilotCheer.spriteW
+      && pilotCheer.videoH === pilotCheer.spriteH
+      && Math.abs((pilotCheer.videoBottom ?? 0) - (pilotCheer.spriteBottom ?? 0)) <= 1,
+    JSON.stringify({ video: [pilotCheer.videoW, pilotCheer.videoH, pilotCheer.videoBottom], sprite: [pilotCheer.spriteW, pilotCheer.spriteH, pilotCheer.spriteBottom] }),
+  )
+  check(
+    WIDTHS[0].width,
+    'pilot 鼓掌：本体与 SVG 道具/装扮层一起让位',
+    pilotCheer.spriteVisibility === 'hidden' && pilotCheer.prop === 'none' && pilotCheer.outfit === 'none',
+    JSON.stringify({ sprite: pilotCheer.spriteVisibility, prop: pilotCheer.prop, outfit: pilotCheer.outfit }),
+  )
+  await page.screenshot({ path: join(OUT_DIR, 'pet-pilot-cheer.png'), clip: { x: 1150, y: Math.max(0, WIDTHS[0].height - 640), width: 290, height: 640 } })
+  await page.waitForTimeout(1900)
+
+  // 12 个动作现在都有专属视频：逐个触发，确认全部走视频层（不再靠 SVG 道具/手臂拼），
+  // 而且 src 真的是内联的透明 WebM。
+  const ALL_ACTIONS = ['newyear', 'lion', 'fireworks', 'redpacket', 'fu', 'dumpling', 'shy', 'cheer', 'dizzy', 'spin', 'roll', 'hop']
+  const missing = []
+  for (const id of ALL_ACTIONS) {
+    const played = await playNativeAction(id)
+    const ok = played.mode === 'video'
+      && played.videoSrc.startsWith('data:video/webm')
+      && played.videoDisplay === 'block'
+    if (!ok) missing.push({ id, act: played.act, mode: played.mode, src: played.videoSrc, display: played.videoDisplay })
+    await page.waitForTimeout(120)
+  }
+  check(
+    WIDTHS[0].width,
+    `12 个专属动作全部由透明 WebM 播放（检查 ${ALL_ACTIONS.length} 个）`,
+    missing.length === 0,
+    JSON.stringify({ missing }),
+  )
+  await page.waitForTimeout(1400)
+
+  const afterClips = await page.evaluate(() => {
+    const root = document.querySelector('[data-dsh-pet]')
+    const sprite = root.querySelector('.dsh-pet-sprite')
+    const video = root.querySelector('.dsh-pet-video')
+    return {
+      active: root.hasAttribute('data-clip-active'),
+      act: root.getAttribute('data-act'),
+      visibility: sprite ? getComputedStyle(sprite).visibility : null,
+      videoDisplay: video ? getComputedStyle(video).display : null,
+      videoPaused: video?.paused ?? null,
+    }
+  })
+  check(
+    WIDTHS[0].width,
+    '动作演完：视频收起并暂停、本体恢复、没有残留 data-act',
+    !afterClips.active
+      && !afterClips.act
+      && afterClips.visibility === 'visible'
+      && afterClips.videoDisplay === 'none'
+      && afterClips.videoPaused === true,
+    JSON.stringify(afterClips),
+  )
+
+  // 切回 lulu：胶片条跟着角色一起替换，不能叠出两层，也不能把默认形象弄坏
+  await page.evaluate(() => {
+    const key = 'dsh-pet:settings:v1'
+    const current = JSON.parse(localStorage.getItem(key) ?? '{}')
+    localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu', size: 104 }))
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-clip', { state: 'attached', timeout: 30000 })
+  await page.waitForTimeout(500)
+  const luluAfter = await page.evaluate(() => ({
+    char: document.querySelector('[data-dsh-pet]').getAttribute('data-char'),
+    clips: document.querySelectorAll('[data-dsh-pet] .dsh-pet-clip').length,
+    videos: document.querySelectorAll('[data-dsh-pet] .dsh-pet-video').length,
+  }))
+  check(
+    WIDTHS[0].width,
+    '切回 lulu 后动作层只剩一份（旧节点被一起换掉）',
+    luluAfter.char === 'lulu' && luluAfter.clips === 1 && luluAfter.videos === 1,
+    JSON.stringify(luluAfter),
+  )
+  const luluCheer = await playNativeAction('cheer')
+  check(
+    WIDTHS[0].width,
+    'lulu 默认形象也走原生鼓掌视频',
+    luluCheer.mode === 'video' && luluCheer.videoPaused === false && luluCheer.spriteVisibility === 'hidden',
+    JSON.stringify({ mode: luluCheer.mode, paused: luluCheer.videoPaused, sprite: luluCheer.spriteVisibility }),
+  )
+  await page.waitForTimeout(1900)
+
+  // 关掉动效：视频不该再播（不然「减少动态效果」形同虚设），退回胶片条定格第一帧
+  await page.evaluate(() => {
+    const key = 'dsh-pet:settings:v1'
+    const current = JSON.parse(localStorage.getItem(key) ?? '{}')
+    localStorage.setItem(key, JSON.stringify({ ...current, motion: 'off' }))
+  })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-clip', { state: 'attached', timeout: 30000 })
+  await page.waitForTimeout(500)
+  const quietCheer = await playNativeAction('cheer')
+  check(
+    WIDTHS[0].width,
+    '关掉动效时不放视频，退回胶片条（定格第一帧）',
+    quietCheer.mode === 'strip' && quietCheer.videoDisplay === 'none' && quietCheer.display === 'block',
+    JSON.stringify({ mode: quietCheer.mode, video: quietCheer.videoDisplay, clip: quietCheer.display }),
+  )
+  await page.waitForTimeout(1900)
 
   check('common', '没有意外的控制台报错', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 

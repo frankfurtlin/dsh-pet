@@ -115,13 +115,13 @@ function checkTokens(css) {
 
 /** 读出所有源文件并做基础校验。 */
 /**
- * 位图素材：源码里写 `__DSH_PET_ASSET_<NAME>__` 占位符，构建时换成 `assets/<name>.webp`
- * 的 data URI。体积预算 512KB（base64 前），超了说明该降采样——桌宠素材不该比整个
- * 客户端 bundle 还大。
+ * 素材内联：源码里写 `__DSH_PET_ASSET_<NAME>__` 占位符，构建时换成 `assets/<name>.<ext>`
+ * 的 data URI（位图 webp/png，以及原生动作视频 webm）。体积预算 768KB（base64 前），
+ * 超了说明该降采样——桌宠素材不该比整个客户端 bundle 还大。
  */
 const ASSET_BUDGET_BYTES = 768 * 1024
 const ASSET_PLACEHOLDER = /__DSH_PET_ASSET_([A-Z0-9_]+)__/g
-const ASSET_TYPES = { webp: 'image/webp', png: 'image/png' }
+const ASSET_TYPES = { webp: 'image/webp', png: 'image/png', webm: 'video/webm' }
 
 function inlineAssets(body) {
   const problems = []
@@ -135,13 +135,13 @@ function inlineAssets(body) {
       if (!path) continue
       const bytes = readFileSync(path)
       if (bytes.byteLength > ASSET_BUDGET_BYTES) {
-        problems.push(`位图素材超预算：assets/${base}.${ext} 是 ${(bytes.byteLength / 1024).toFixed(0)}KB，上限 ${ASSET_BUDGET_BYTES / 1024}KB（降采样再接）`)
+        problems.push(`素材超预算：assets/${base}.${ext} 是 ${(bytes.byteLength / 1024).toFixed(0)}KB，上限 ${ASSET_BUDGET_BYTES / 1024}KB（降采样再接）`)
         return whole
       }
       used.add(`${base}.${ext} (${(bytes.byteLength / 1024).toFixed(0)}KB)`)
       return `data:${type};base64,${bytes.toString('base64')}`
     }
-    problems.push(`位图素材缺失：assets/${base}.webp（源码里的 ${whole} 没有对应文件）`)
+    problems.push(`素材缺失：assets/${base}.webp / .png / .webm（源码里的 ${whole} 没有对应文件）`)
     return whole
   })
   return { out, used: [...used], problems }
@@ -206,7 +206,7 @@ if (args.has('--check')) {
   if (!existsSync(OUT_PATH)) fail('client.js 不存在，请先运行 node scripts/build.mjs')
   const current = readFileSync(OUT_PATH, 'utf8')
   if (current !== bundle) fail('client.js 与源码不一致，请运行 node scripts/build.mjs 重新生成')
-  console.log(`✓ client.js 与源码一致（${(bundle.length / 1024).toFixed(1)}KB，${definedCount} 个 --dsw-* token、${assets.length} 个位图素材已内联核对）`)
+  console.log(`✓ client.js 与源码一致（${(bundle.length / 1024).toFixed(1)}KB，${definedCount} 个 --dsw-* token、${assets.length} 个素材已内联核对）`)
   process.exit(0)
 }
 
@@ -216,6 +216,6 @@ const tokens = collectTokens(readFileSync(CSS_PATH, 'utf8'))
 console.log(`✓ client.js 已生成：${(bundle.length / 1024).toFixed(1)}KB`)
 console.log(`  源文件 ${SOURCES.length} 个：${SOURCES.join(', ')}`)
 console.log(`  样式 token：定义 ${tokens.defined.size} 个，引用 ${tokens.used.size} 个`)
-for (const asset of assets) console.log(`  位图素材：${asset}（已内联为 data URI）`)
+for (const asset of assets) console.log(`  素材：${asset}（已内联为 data URI）`)
 if (!existsSync(CONFIG_PATH)) console.warn(`⚠ 缺少 ${CONFIG_PATH}（token 校验会走兜底路径）`)
 void readdirSync

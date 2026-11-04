@@ -11,7 +11,7 @@
 4. 拼成单行胶片条导出 webp，生成 generated-anims.js（data URI 内联）
 
 用法：
-  python3 scripts/import-anim.py --in /root/workspace/lulu-images/lulu-idle.gif --label 噜噜
+  python3 scripts/import-anim.py --in /root/workspace/plugins/dsh-pet/images/lulu-idle.gif --label 噜噜
   python3 scripts/import-anim.py --in clip.mp4 --fps 12 --max-frames 12
 """
 from __future__ import annotations

@@ -29,7 +29,7 @@ const PET_SPRITE_STYLE_ID = 'dsh-pet-sprite-style'
  */
 function petEnsureSpriteCss() {
   if (typeof document === 'undefined') return null
-  const css = [petSpriteCss(), petAnimCss()].filter(Boolean).join('\n')
+  const css = [petSpriteCss(), petAnimCss(), petClipCss()].filter(Boolean).join('\n')
   if (!css) return null
   let style = document.getElementById(PET_SPRITE_STYLE_ID)
   if (!style) {
@@ -193,6 +193,8 @@ function petCreateOverlay(deps) {
     /** 正在表演的动作 id（null = 没在表演） */
     action: null,
     actionTimer: null,
+    /** 解码失败过的「角色:动作」，之后直接走胶片条 */
+    videoBroken: new Set(),
     /** host 活动流快照（online=false 表示 host 半还没起来，所有 live 功能静默降级） */
     live: null,
     /** 上一次见到的工具名 / 时间（工具气泡节流用） */
@@ -939,6 +941,89 @@ function petCreateOverlay(deps) {
     else root.removeAttribute('data-pose')
   }
 
+  /** 原生动作视频层（<video>）。 */
+  const videoLayer = () => figure.querySelector('.dsh-pet-video')
+
+  const clearNative = () => {
+    const layer = videoLayer()
+    if (layer) {
+      try {
+        layer.pause()
+      } catch {}
+      layer.removeAttribute('data-video')
+    }
+    const clip = figure.querySelector('.dsh-pet-clip')
+    if (clip) clip.removeAttribute('data-clip')
+    root.removeAttribute('data-clip-active')
+  }
+
+  /**
+   * 原生动作视频：能播就铺一条透明 WebM，帧率/时长不受图集协议限制。
+   *
+   * 返回 true 表示已接管本动作；解码失败的一律记进 state.videoBroken，之后
+   * 同一个动作直接走胶片条，不会每次都白试一遍。
+   */
+  const setVideoAction = (characterId, actionId) => {
+    const video = petActionVideo(characterId, actionId)
+    const layer = videoLayer()
+    if (!video || !layer) return false
+    if (state.videoBroken.has(`${characterId}:${actionId}`)) return false
+    // 关了动效（或系统要求减少动态效果）就不放视频：退回胶片条，它的 CSS 动画会被暂停，
+    // 等于定格在片段第一帧，比让整个角色消失好
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (root.getAttribute('data-motion') === 'off' || reduced) return false
+    if (layer.getAttribute('src') !== video.url) {
+      layer.setAttribute('src', video.url)
+      layer.load()
+    }
+    // 先摘再挂 + 强制重排，连播同一个动作时视频也会从头放
+    layer.removeAttribute('data-video')
+    root.removeAttribute('data-clip-active')
+    void layer.offsetWidth
+    layer.setAttribute('data-video', actionId)
+    root.setAttribute('data-clip-active', 'video')
+    const markBroken = () => {
+      state.videoBroken.add(`${characterId}:${actionId}`)
+      // 本动作还在演：摘掉视频，退回胶片条（没有胶片条就露出位图本体）
+      if (root.getAttribute('data-clip-active') === 'video') {
+        clearNative()
+        if (state.action) setClip(state.action)
+      }
+    }
+    // onerror 是单值属性：连播多个动作也只会有一个处理器，不会越挂越多
+    layer.onerror = markBroken
+    try {
+      layer.currentTime = 0
+      const played = layer.play()
+      if (played && typeof played.catch === 'function') played.catch(markBroken)
+    } catch {
+      markBroken()
+      return false
+    }
+    return true
+  }
+
+  /**
+   * 原生动作胶片条：有片段的动作期间，用横向 WebP 盖住位图本体和 SVG 道具。
+   * 没片段的角色/动作保持原样（返回 false 让调用方继续走老路径）。
+   */
+  const setClip = (actionId) => {
+    const layer = figure.querySelector('.dsh-pet-clip')
+    if (!layer) return false
+    if (actionId) {
+      // 先摘再挂 + 强制重排，否则连播同一个动作时动画不会从头放
+      layer.removeAttribute('data-clip')
+      root.removeAttribute('data-clip-active')
+      void layer.offsetWidth
+      layer.setAttribute('data-clip', actionId)
+      root.setAttribute('data-clip-active', 'strip')
+      return true
+    }
+    layer.removeAttribute('data-clip')
+    root.removeAttribute('data-clip-active')
+    return false
+  }
+
   const endAction = () => {
     if (state.actionTimer !== null) {
       clearTimeout(state.actionTimer)
@@ -946,6 +1031,7 @@ function petCreateOverlay(deps) {
     }
     state.action = null
     root.removeAttribute('data-act')
+    clearNative()
     setPose(null)
     setProp(null)
     clearFx()
@@ -973,8 +1059,12 @@ function petCreateOverlay(deps) {
     void root.offsetWidth
     root.style.setProperty('--pet-act-ms', `${ms}ms`)
     root.setAttribute('data-act', action.effect)
-    setPose(action.arms ?? null)
-    setProp(action.prop ?? null)
+    // 专属动作的优先级：原生视频 > 胶片条 > SVG 组件表演
+    const characterId = root.getAttribute('data-char') ?? ''
+    const native = setVideoAction(characterId, action.id)
+      || Boolean(setClip(petActionClip(characterId, action.id) ? action.id : null))
+    setPose(native ? null : (action.arms ?? null))
+    setProp(native ? null : (action.prop ?? null))
     spawnFx(action.fx)
     if (!options.silent) sound.play(action.sound)
     const say = options.say === false ? '' : petActionSay(action, petLocaleLang(petProbe(ctx, 'locale')))
@@ -1208,7 +1298,12 @@ function petCreateOverlay(deps) {
     // 关掉「工具级状态」后：不参与状态仲裁、不弹工具/回合气泡，活动流连接照旧（设置页要看在线状态）
     root.setAttribute('data-feed', settings.liveFeed === false ? 'off' : 'on')
     if (renderedCharacter !== settings.character) {
-      const previous = figure.querySelector('.dsh-pet-svg, .dsh-pet-sprite, .dsh-pet-image, .dsh-pet-anim')
+      const previousNodes = figure.querySelectorAll(
+        '.dsh-pet-svg, .dsh-pet-sprite, .dsh-pet-clip, .dsh-pet-video, .dsh-pet-image, .dsh-pet-anim',
+      )
+      // 换角色时先摘原生动作层：旧节点一删，setClip/setVideoAction 就找不到 layer 了，
+      // data-clip-active 会留在 root 上把新角色一起隐藏。
+      clearNative()
       const isSprite = petIsSprite(settings.character)
       const isImage = petIsImage(settings.character)
       const isAnim = petIsAnim(settings.character)
@@ -1221,9 +1316,15 @@ function petCreateOverlay(deps) {
             ? petImageMarkup(settings.character)
             : petSvg(settings.character)
       const holder = petEl('div', { html: markup })
-      const next = holder.firstElementChild
-      if (previous) previous.replaceWith(next)
-      else figure.insertBefore(next, propLayer)
+      // 位图角色一次挂两个兄弟节点（本体 + 原生动作胶片条），不能只取 firstElementChild
+      const nodes = [...holder.children]
+      if (previousNodes.length) {
+        const anchor = previousNodes[0]
+        for (const node of nodes) figure.insertBefore(node, anchor)
+        previousNodes.forEach((node) => node.remove())
+      } else {
+        for (const node of nodes) figure.insertBefore(node, propLayer)
+      }
       renderedCharacter = settings.character
       root.setAttribute('data-render', isSprite ? 'sprite' : isAnim ? 'anim' : isImage ? 'image' : 'vector')
       root.removeAttribute('data-image-tilt')

@@ -83,22 +83,87 @@ test('包名、版本、补丁 id 三处一致', () => {
   assert.equal(pkg.engines, undefined, '不要声明 engines.dsh')
 })
 
-test('内置形象只剩一只位图噜噜', () => {
+test('内置形象：默认 pilot（图生视频版噜噜）+ 经典 lulu', () => {
   const { get } = loadSources(['characters.js'])
   const characters = get('PET_CHARACTERS')
-  assert.equal(characters.length, 1, '只保留噜噜一只形象')
-  assert.equal(characters[0].id, 'lulu')
-  assert.equal(characters[0].kind, 'sprite', '噜噜走位图，不再有矢量形象')
-  // 位图角色的配色烘焙在素材里，不该再挂 palette
-  assert.equal(characters[0].palette, undefined)
-  // 未知 id 要回落到唯一形象，别让坏配置把宠物整只弄没
-  assert.equal(get('petCharacter')('nope').id, 'lulu')
+  assert.equal(characters.length, 2, '默认 pilot + 经典 lulu')
+  // 2026-11-05 起默认形象换成图生视频版（pilot），经典图集排第二张卡
+  assert.equal(characters[0].id, 'pilot')
+  assert.equal(characters[0].label.zh, '噜噜')
+  assert.equal(characters[1].id, 'lulu')
+  assert.equal(characters[1].label.zh, '噜噜（经典）')
+  for (const character of characters) {
+    assert.equal(character.kind, 'sprite', '两只都走位图分支，不再有矢量形象')
+    // 位图角色的配色烘焙在素材里，不该再挂 palette
+    assert.equal(character.palette, undefined)
+  }
+  // 未知 id 要回落到默认形象，别让坏配置把宠物整只弄没
+  assert.equal(get('petCharacter')('nope').id, 'pilot')
+})
+
+test('原生动作：胶片条与透明视频都只接合格素材，时长必须等于动作时长', () => {
+  const { get } = loadSources(['characters.js', 'actions.js'])
+  const clips = get('PET_ACTION_CLIPS')
+  const actions = get('PET_ACTIONS')
+  const byId = new Map(actions.map((action) => [action.id, action]))
+
+  for (const character of get('PET_CHARACTERS')) {
+    const table = clips[character.id]
+    assert.ok(table, `${character.id} 没有片段表`)
+    for (const [actionId, clip] of Object.entries(table)) {
+      // 每条片段都必须是整帧横向排列，且逐帧推 background-position 的机制依赖这两个值
+      assert.equal(clip.frames * clip.frameW, clip.frames * 192, `${character.id}/${actionId} 帧宽`)
+      assert.equal(clip.frameH, 208, `${character.id}/${actionId} 帧高`)
+      assert.ok(clip.frames > 1, `${character.id}/${actionId} 至少两帧`)
+      const action = byId.get(actionId)
+      assert.ok(action, `${character.id}/${actionId} 在 PET_ACTIONS 里不存在`)
+      assert.equal(
+        clip.stepMs * clip.frames,
+        action.seconds * 1000,
+        `${character.id}/${actionId} 片段总时长必须等于动作时长，否则胶片条和动作会错位`,
+      )
+    }
+  }
+
+  // hop 的旧 i2v 素材整段出画（头肩大特写、帽子与脚被裁），明确不接胶片条：
+  // 回归这条是为了防止「素材还在 assets/ 里就被顺手登记进来」。现在 hop 走透明视频。
+  for (const character of get('PET_CHARACTERS')) {
+    assert.equal(clips[character.id].hop, undefined, 'hop 的素材不合格，不该接原生片段')
+  }
+
+  // 透明视频（<video> 原生动作）：源素材必须真的在 assets/ 里、且已经内联进构建产物
+  const videos = get('PET_ACTION_VIDEOS')
+  const bundle = read('client.js')
+  for (const character of get('PET_CHARACTERS')) {
+    const table = videos[character.id]
+    assert.ok(table, `${character.id} 没有原生动作视频表`)
+    for (const [actionId, video] of Object.entries(table)) {
+      const action = byId.get(actionId)
+      assert.ok(action, `${character.id}/${actionId} 在 PET_ACTIONS 里不存在`)
+      const match = /^__DSH_PET_ASSET_([A-Z0-9_]+)__$/.exec(video.url)
+      assert.ok(match, `${character.id}/${actionId} 必须是构建期占位符，不能直接写 URL`)
+      const file = `assets/${match[1].toLowerCase().replace(/_/g, '-')}.webm`
+      assert.ok(existsSync(join(ROOT, file)), `${file} 不存在`)
+      assert.ok(statSync(join(ROOT, file)).size > 1024, `${file} 太小，像是空文件`)
+      // 视频比动作略长没关系（演完就停），但不能短太多，否则动作后半段会切回位图
+      assert.ok(
+        Math.abs(video.seconds - (action.seconds ?? 2)) <= 0.3,
+        `${character.id}/${actionId} 视频 ${video.seconds}s 与动作 ${action.seconds}s 差太多`,
+      )
+    }
+    // 12 个动作现在都有原生视频（一动作一条透明 WebM），缺一个就说明登记表漏了
+    assert.equal(Object.keys(table).length, get('PET_ACTIONS').length, `${character.id} 动作视频数量对不上`)
+    for (const action of get('PET_ACTIONS')) {
+      assert.ok(table[action.id], `${character.id}/${action.id} 缺少原生动作视频`)
+    }
+  }
+  assert.match(bundle, /data:video\/webm;base64,/, '构建产物里没有内联 webm（忘了 npm run build？）')
 })
 
 test('位图形象：图集协议、动作表与构建期素材内联', () => {
   const { get } = loadSources(['characters.js'])
   const characters = get('PET_CHARACTERS')
-  assert.equal(characters.length, 1, '内置形象只剩一只位图噜噜')
+  assert.equal(characters.length, 2, '噜噜 + 图生视频试点 pilot')
 
   const lulu = characters.find((character) => character.id === 'lulu')
   assert.ok(lulu, '缺少噜噜')
@@ -216,12 +281,26 @@ test('中英字典键集合一致，占位符能正确替换', () => {
   assert.equal(locale(undefined), 'en')
 })
 
+test('store：默认形象迁移（老数据 lulu → pilot，只迁一次）', () => {
+  const localStorage = fakeLocalStorage()
+  localStorage.setItem('dsh-pet:settings:v1', JSON.stringify({ character: 'lulu', size: 200 }))
+  const { get } = loadSources(['store.js'], { localStorage })
+  const instance = get('petCreateStore')()
+  assert.equal(instance.getSettings().character, 'pilot', '停在老默认上的用户跟随新默认')
+  assert.equal(instance.getSettings().size, 200, '其它设置不能被迁移冲掉')
+
+  // 用户之后再手动选回经典 lulu，刷新也不能被迁移覆盖
+  instance.patchSettings({ character: 'lulu' })
+  const again = get('petCreateStore')()
+  assert.equal(again.getSettings().character, 'lulu', '迁移只做一次，尊重用户后续选择')
+})
+
 test('store：默认值、持久化、等级数学、跨天连续天数', async () => {
   const localStorage = fakeLocalStorage()
   const { get } = loadSources(['store.js'], { localStorage })
   const instance = get('petCreateStore')()
 
-  assert.equal(instance.getSettings().character, 'lulu', '默认形象是噜噜')
+  assert.equal(instance.getSettings().character, 'pilot', '默认形象是图生视频版噜噜')
   assert.equal(instance.getSettings().enabled, true)
   assert.equal(instance.getSettings().volume, 0.45, '默认音量（旧版 0.3 被用户反馈"太小声"后调高）')
 
@@ -333,8 +412,8 @@ test('位图噜噜：Codex 协议、独立素材、16 向注视', () => {
   // 注意：vm 里造出来的数组是另一个 realm 的 Array，deepStrictEqual 会因原型不同而误判
   assert.equal(
     JSON.stringify(sprites.map((character) => character.id).sort()),
-    JSON.stringify(['lulu']),
-    '只保留噜噜一只位图形象',
+    JSON.stringify(['lulu', 'pilot']),
+    '噜噜 + 图生视频试点 pilot',
   )
   assert.equal(new Set(sprites.map((character) => character.sprite.url)).size, sprites.length, '每只宠物必须有自己的素材占位符')
 
@@ -357,7 +436,7 @@ test('位图噜噜：Codex 协议、独立素材、16 向注视', () => {
   }
 
   // 11 行图集（噜噜）才有第 9–10 行注视帧
-  const gazeIds = ['lulu']
+  const gazeIds = ['lulu', 'pilot']
   for (const id of gazeIds) assert.ok(sprites.find((pet) => pet.id === id).sprite.gaze, `${id} 应带 16 向注视`)
   for (const pet of sprites.filter((entry) => !gazeIds.includes(entry.id))) {
     assert.equal(pet.sprite.gaze, undefined, `${pet.id} 的图集只有 9 行，不该挂注视`)
@@ -792,7 +871,7 @@ test('装扮：id 唯一、标记有 class、切换闭环、默认戴围巾', ()
 })
 
 /**
- * 自备形象流水线（scripts/import-lulu.py）：用户在 /root/workspace/lulu-images/
+ * 自备形象流水线（scripts/import-lulu.py）：用户在 /root/workspace/plugins/dsh-pet/images/
  * 放图之后，这一跑就该产出可用素材。这里用现成图集当输入，验证「能跑通 + 产物形状对」，
  * 不断言具体像素（那属于素材本身的事）。
  */
