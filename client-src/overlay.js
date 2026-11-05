@@ -342,6 +342,9 @@ function petCreateOverlay(deps) {
   /** 指针静止这么久之后回到 idle 动画，免得一直瞪着光标像木头人。 */
   const GAZE_HOLD_MS = 2200
   let gazeUntil = 0
+  // 指针一停就排一个「到点收回注视」的定时器。只用 tick（1s 粒度）的话，
+  // 2.2s 的 hold 实际会在 2.2–3.2s 之间才收回，看起来像「盯死你」。
+  let gazeIdleTimer = 0
   let gazeRaf = 0
 
   const gazeId = () => root.getAttribute('data-char') ?? ''
@@ -357,6 +360,10 @@ function petCreateOverlay(deps) {
 
   const clearGaze = () => {
     gazeUntil = 0
+    if (gazeIdleTimer) {
+      clearTimeout(gazeIdleTimer)
+      gazeIdleTimer = 0
+    }
     if (root.getAttribute('data-gaze') !== 'idle') root.setAttribute('data-gaze', 'idle')
     // 矢量角色的瞳孔偏移也一并归零
     if (root.style.getPropertyValue('--pet-look-x')) root.style.removeProperty('--pet-look-x')
@@ -432,6 +439,11 @@ function petCreateOverlay(deps) {
     syncImageFollow()
     if (!gazeId()) return
     gazeUntil = Date.now() + GAZE_HOLD_MS
+    if (gazeIdleTimer) clearTimeout(gazeIdleTimer)
+    gazeIdleTimer = setTimeout(() => {
+      gazeIdleTimer = 0
+      if (gazeUntil && Date.now() >= gazeUntil) clearGaze()
+    }, GAZE_HOLD_MS + 40)
     scheduleGaze()
   }
 
@@ -1518,6 +1530,13 @@ function petCreateOverlay(deps) {
       listeners.push(() => {
         if (idleActionTimer !== null) clearTimeout(idleActionTimer)
         idleActionTimer = null
+      })
+
+      listeners.push(() => {
+        if (gazeIdleTimer) {
+          clearTimeout(gazeIdleTimer)
+          gazeIdleTimer = 0
+        }
       })
 
       listeners.push(() => {

@@ -204,7 +204,7 @@ python3 scripts/video-to-clip.py --in /root/.hermes/cache/scratch/act/cheer.mp4 
 
 ## 素材来源与许可
 
-位图素材都是社区公开的 **Codex pet 协议 v2** 图集（1536×2288 或 1536×1872，8 列 × 11/9 行、单格 192×208、RGBA），逐张重新压缩为 WebP 后内联，未做任何缩放（原分辨率就是 200px 档要的清晰度）。
+位图素材都是社区公开的 **Codex pet 协议 v2** 图集（1536×2288 或 1536×1872，8 列 × 11/9 行、单格 192×208、RGBA），逐张重新压缩为 WebP 后放进 `assets/`、由 `/pet/assets/` 直供，未做任何缩放（原分辨率就是 200px 档要的清晰度）。
 
 | 形象 | 上游 | 许可 |
 | --- | --- | --- |
@@ -361,14 +361,14 @@ python3 scripts/video-to-webm.py --video /tmp/maxtube/out/cheer.mp4 --action che
 
 2026-11-02 第二轮（活动流 / 预警 / 日记 / 图集）：`npm run verify` 重启前 **128/128**（`/pet/**` 404 的降级路径通过）；删掉矢量形象、菜单改为视口内落点后为 **126/126**（部分矢量/形象断言合并）。单元测试 **16/16**，另有 host 侧 `test/host.test.mjs` **16/16**（`node --test test/host.test.mjs`）。新增断言：`data-live` 只在 on/off 之间、`data-usage` 取值合法、占用条元素存在、`/pet/activity` 离线时降级为 off 且不报错、设置里活动流状态行 / 每日日记块 / 图集导入入口 / 预警阈值默认 70-88；在线时额外验 `/pet/activity` 快照合法、`data-live=on`、`/pet/diary` 返回可读短句。新增单测：优先级表与仲裁、host 状态映射（approval/error→alert、tool→thinking、done→celebrate）、工具名→相位（todo_write 判"排计划"、web_search 判"上网查"）、时长格式化、上下文等级阈值、回合文案成败、轮询器（水位 after=7 前移、连续失败降级）、标题闪烁恢复原文、图集注册（非法 id/行数/mime 被拒、重复注册幂等、CSS 里出现 `/pet/skins/<id>.webp`）。
 
-单元测试（`npm test`，23 个用例 + `test/assets.test.mjs` 5 个）覆盖：自备形象流水线（图片 → 抠底/裁边/缩放 → 内联数据模块）、包名/版本/补丁 id 一致、矢量角色配色 JS↔CSS 逐 token 对齐、位图协议（8 列×11 行、9 动作行号与帧数、慢速 idle = 1.8×、状态→动作投影、拖拽左右朝向、生成 10 组 keyframes、素材体积预算与 data URI 内联）、中英键集合相同、store 等级数学与持久化与跨天连续、状态优先级与事件检测（Map/对象两种快照）、bundle 形状与导出名、动作库（id 唯一 / 每类非空 / 时长 1–3s / 每个 effect 都有对应关键帧与 `data-act` 规则 / 粒子数量与取整 / 空闲自演只在轻动作池里）。
+单元测试（`npm test`，23 个用例 + `test/assets.test.mjs` 5 个）覆盖：自备形象流水线（图片 → 抠底/裁边/缩放 → 内联数据模块）、包名/版本/补丁 id 一致、矢量角色配色 JS↔CSS 逐 token 对齐、位图协议（8 列×11 行、9 动作行号与帧数、慢速 idle = 1.8×、状态→动作投影、拖拽左右朝向、生成 10 组 keyframes、素材体积预算与 URL 直供）、中英键集合相同、store 等级数学与持久化与跨天连续、状态优先级与事件检测（Map/对象两种快照）、bundle 形状与导出名、动作库（id 唯一 / 每类非空 / 时长 1–3s / 每个 effect 都有对应关键帧与 `data-act` 规则 / 粒子数量与取整 / 空闲自演只在轻动作池里）。
 
 ## 已知边界
 
 - 自备的静态图 / 动图都是**本机自用**素材：静态只有呼吸+倾斜+阴影，动图只有一条循环（无法分状态）。
 
-- **用户自定义图片形象**：已支持（`scripts/import-lulu.py` + `kind: 'image'` 分支，见「自备形象」）；静态画只有呼吸/倾斜跟随，没有逐帧动作；内置位图形象已经有通用分支：在 `client-src/characters.js` 的 `PET_CHARACTERS` 里加一项 `{ kind: 'sprite', sprite: { url: '__DSH_PET_ASSET_<NAME>__', frameW, frameH, cols, rows, actions, states } }`，把图集放到 `assets/<name>.webp`，构建会自动内联并校验体积。位图噜噜已经接了第 9–10 行的 16 向注视帧；以后再收位图形象若要注视，加 `sprite.gaze = { rows: [9, 10], count: 16, originDeg: -90, stepDeg: 22.5, deadZonePx: 28 }` 即可。
-- 动作主体仍是**程序化表演**（CSS 关键帧 + DOM 粒子），只有 `cheer` 接了原生动作视频（透明 WebM + 胶片条回退）：所以动作数比 `dsh-whale-pet` 的 95 个少，也因此没有素材体积和授权问题。视频现在内联在 bundle 里（52KB）；要全量迁移（12 个动作）得改成宿主静态路由按需加载 —— 那需要重启 DSH 才能生效，而且每条约 0.3MB，别再往 bundle 里塞。想加动作：在 `client-src/actions.js` 的 `PET_ACTIONS` 里加一项 + 在 `styles/pet.css` 写对应 `@keyframes dsh-pet-act-<effect>` 与 `[data-act='<effect>']` 规则，单测会检查两者是否都写了。
+- **用户自定义图片形象**：已支持（`scripts/import-lulu.py` + `kind: 'image'` 分支，见「自备形象」）；静态画只有呼吸/倾斜跟随，没有逐帧动作；内置位图形象已经有通用分支：在 `client-src/characters.js` 的 `PET_CHARACTERS` 里加一项 `{ kind: 'sprite', sprite: { url: '__DSH_PET_ASSET_<NAME>__', frameW, frameH, cols, rows, actions, states } }`，把图集放到 `assets/<name>.webp`，构建会替换成 `/pet/assets/<name>.webp` 并校验体积。位图噜噜已经接了第 9–10 行的 16 向注视帧；以后再收位图形象若要注视，加 `sprite.gaze = { rows: [9, 10], count: 16, originDeg: -90, stepDeg: 22.5, deadZonePx: 28 }` 即可。
+- 动作主体仍是**程序化表演**（CSS 关键帧 + DOM 粒子），12 个动作另外接了一条原生透明 WebM（`assets/anim-*.webm`，宿主 `/pet/assets` 直供，bundle 里只留 URL）；播不了时按「视频 → 胶片条 → SVG 表演」三级回退。所以动作数比 `dsh-whale-pet` 的 95 个少，也因此没有素材体积和授权问题。加新动作视频：`scripts/video-to-webm.py` 转好放进 `assets/`，在 `client-src/characters.js` 的 `PET_ACTION_VIDEOS` 登记 `{ url, seconds }`，`npm run build` 会校验体积并替换成 URL（host 路由只认白名单名，改路由本身要重启 DSH）。想加动作：在 `client-src/actions.js` 的 `PET_ACTIONS` 里加一项 + 在 `styles/pet.css` 写对应 `@keyframes dsh-pet-act-<effect>` 与 `[data-act='<effect>']` 规则，单测会检查两者是否都写了。
 - **生成素材的一致性还不够**：图生视频会轻微改比例（头偏大）、抹掉小细节（南瓜帽的柄变平顶），`hop` 的片段甚至整段出画，所以只接了鼓掌一个动作。要全面替换成「专属动作」，得先解决生成侧的镜头/比例锁定（或改用逐帧重绘、把动作重定向到原图集比例），并且需要重新拿到视频生成额度 —— 剩下 10 个动作提交时全部返回 `HTTP 402 Payment Required`。
 - `assets/clip-hop.webp` 是**被拒的草稿**（head/脚出画、全程头肩特写），留在仓库里供以后对比，不参与构建（实际页面效果见 `docs/verification/pet/pet-hop-rejected-page.png`：只剩头肩，帽子与脚都在画外）；`images/generated/` 与 `images/generated-i2i/`（换背景/换场景实验）也没有接入任何代码路径。
 - 宠物只有一套「行为人格」，没有多套语音/性格包。

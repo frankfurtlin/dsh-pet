@@ -128,6 +128,10 @@ async function main() {
     // 属于「功能降级」的预期路径（页面已经断言 data-live=off），不算缺陷。
     // 重启后同一路径会 200；只有非 404 的 /pet 错误才该算失败。
     if (/\/pet\//.test(url) && /404/.test(text)) return
+    // 素材路由的负向探测（路径穿越 400 / 非 GET 405）是验收自己发起的 fetch，
+    // 浏览器会把 4xx 记为控制台错误；只放过这两条精确路径，其它 4xx 照旧算失败。
+    if (/\/pet\/assets\/\.\.%2Fpackage\.json/.test(text) && /400/.test(text)) return
+    if (/\/pet\/assets\/anim-cheer\.webm/.test(text) && /405/.test(text)) return
     // DSH 自身的 cordis-client-runner 周期性同步 inspect provider 时会偶发
     // 「Failed to fetch」（网页端与 /api 的探测路径差异导致），与本插件无关，
     // 但会随机让「无意外报错」这条断言变红 —— 单独放过，其余照旧严格。
@@ -637,7 +641,7 @@ async function main() {
 
   await page.evaluate(() => localStorage.removeItem('dsh-pet:settings:v1'))
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { timeout: 30000 })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { state: 'attached', timeout: 30000 })
   await page.waitForTimeout(400)
   const firstRun = await page.evaluate(() => ({
     char: document.querySelector('[data-dsh-pet]')?.getAttribute('data-char'),
@@ -651,7 +655,7 @@ async function main() {
     localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu', size: 136 }))
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { timeout: 30000 })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { state: 'attached', timeout: 30000 })
   await page.waitForTimeout(400)
 
   const sprite = await page.evaluate(() => {
@@ -827,7 +831,7 @@ async function main() {
     localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu' }))
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { timeout: 30000 })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { state: 'attached', timeout: 30000 })
   await page.waitForTimeout(300)
 
   // ── 只剩噜噜：位图噜噜按 11 行图集缩放（缩略图 800%×1100%） ──────────
@@ -837,7 +841,7 @@ async function main() {
     localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu', size: 136 }))
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { timeout: 30000 })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { state: 'attached', timeout: 30000 })
   await page.waitForTimeout(400)
   const luluOnly = await page.evaluate(() => {
     const root = document.querySelector('[data-dsh-pet]')
@@ -935,7 +939,7 @@ async function main() {
     localStorage.setItem(key, JSON.stringify({ ...current, character: 'lulu' }))
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { timeout: 30000 })
+  await page.waitForSelector('[data-dsh-pet] .dsh-pet-sprite', { state: 'attached', timeout: 30000 })
   await page.waitForTimeout(300)
 
   // ── 装扮：位图角色加常驻配饰（用户嫌「太素」） ─────────────────
@@ -1317,20 +1321,23 @@ async function main() {
     const root = document.querySelector('[data-dsh-pet]')
     const sprite = root.querySelector('.dsh-pet-sprite')
     const video = root.querySelector('.dsh-pet-video')
+    const idle = root.querySelector('.dsh-pet-idle')
     return {
       active: root.hasAttribute('data-clip-active'),
       act: root.getAttribute('data-act'),
       visibility: sprite ? getComputedStyle(sprite).visibility : null,
       videoDisplay: video ? getComputedStyle(video).display : null,
       videoPaused: video?.paused ?? null,
+      idleActive: root.hasAttribute('data-idle-video'),
+      idleDisplay: idle ? getComputedStyle(idle).display : null,
     }
   })
   check(
     WIDTHS[0].width,
-    '动作演完：视频收起并暂停、本体恢复、没有残留 data-act',
+    '动作演完：视频收起并暂停、本体/idle 视频恢复、没有残留 data-act',
     !afterClips.active
       && !afterClips.act
-      && afterClips.visibility === 'visible'
+      && (afterClips.idleActive ? afterClips.idleDisplay === 'block' && afterClips.visibility === 'hidden' : afterClips.visibility === 'visible')
       && afterClips.videoDisplay === 'none'
       && afterClips.videoPaused === true,
     JSON.stringify(afterClips),
