@@ -379,6 +379,13 @@ function petCreateOverlay(deps) {
 
   /** 按指针相对宠物中心的方向挑一格注视帧。离得太近（dead zone）就回到 idle 动画。 */
   const updateGaze = () => {
+    // 注视只在「指针动过之后 GAZE_HOLD_MS 内」有效。状态轮询（约 900ms 一次）
+    // 会反复调 renderState → updateGaze，没有这道闸门就会把「看一眼就收回」
+    // 变成死盯：hold 到点 clearGaze 了，下一次轮询又按老 pointer 设回 look。
+    if (!gazeUntil || Date.now() > gazeUntil) {
+      clearGaze()
+      return
+    }
     if (!pointer || !gazeAllowed()) {
       clearGaze()
       return
