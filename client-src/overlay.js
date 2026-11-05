@@ -259,6 +259,66 @@ function petCreateOverlay(deps) {
 
   const effectiveState = () => state.reaction ?? state.base
 
+  /** 常驻 idle 视频层（只有 IDLE_VIDEO 的形象才有这个元素）。 */
+  const idleVideoLayer = () => figure.querySelector('.dsh-pet-idle')
+
+  /** idle 视频解码失败过一次就别再试，退回位图 idle 帧。 */
+  let idleVideoBroken = false
+
+  /**
+   * 常驻 idle 视频：闲着的时候用一条循环 WebM 顶掉位图 idle 帧（6 帧 steps 换帧
+   * 看久了像定格），比图集连贯得多。
+   *
+   * 让位规则与注视一致：动作、拖拽、注视、关动效（或系统要求减少动态效果）时都不放，
+   * 交给原有渲染 —— 否则注视帧、动作视频会和 idle 视频叠在一起。
+   */
+  const syncIdleVideo = () => {
+    const layer = idleVideoLayer()
+    if (!layer) return
+    const video = petIdleVideo(root.getAttribute('data-char') ?? '')
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    const stateName = effectiveState()
+    const wanted = Boolean(video)
+      && !idleVideoBroken
+      && root.getAttribute('data-motion') !== 'off'
+      && !reduced
+      && !state.action
+      && !state.drag
+      && root.getAttribute('data-gaze') !== 'look'
+      && (stateName === 'idle' || stateName === 'sleep')
+    if (!wanted) {
+      if (root.hasAttribute('data-idle-video')) {
+        try {
+          layer.pause()
+        } catch {}
+        root.removeAttribute('data-idle-video')
+      }
+      return
+    }
+    if (layer.getAttribute('src') !== video.url) {
+      layer.setAttribute('src', video.url)
+      layer.load()
+      // onerror 是单值属性：只在挂新 src 时设一次，不会越挂越多
+      layer.onerror = () => {
+        idleVideoBroken = true
+        root.removeAttribute('data-idle-video')
+      }
+    }
+    // 睡觉时放慢，像呼吸变缓；清醒时按原速
+    layer.playbackRate = stateName === 'sleep' ? 0.55 : 1
+    root.setAttribute('data-idle-video', '')
+    if (layer.paused) {
+      const played = layer.play()
+      if (played && typeof played.catch === 'function') {
+        played.catch(() => {
+          idleVideoBroken = true
+          root.removeAttribute('data-idle-video')
+        })
+      }
+    }
+  }
+
+
   /** 位图元素（矢量角色时为 null） */
   const spriteElement = () => figure.querySelector('.dsh-pet-sprite')
 
@@ -307,6 +367,7 @@ function petCreateOverlay(deps) {
     // 所以两个都要摘干净，否则会残留某一格的静态画面。
     if (element.style.animation) element.style.animation = ''
     if (element.style.backgroundPosition) element.style.backgroundPosition = ''
+    syncIdleVideo()
   }
 
   /** 按指针相对宠物中心的方向挑一格注视帧。离得太近（dead zone）就回到 idle 动画。 */
@@ -341,6 +402,7 @@ function petCreateOverlay(deps) {
       root.setAttribute('data-gaze', 'look')
       element.style.animation = 'none'
       element.style.backgroundPosition = `${cell.x}px ${cell.y}px`
+      syncIdleVideo()
       return
     }
 
@@ -395,6 +457,7 @@ function petCreateOverlay(deps) {
     root.setAttribute('data-state', effectiveState())
     syncSpriteAction()
     updateGaze()
+    syncIdleVideo()
     const { pending, unread } = state.facts
     const count = pending + unread
     badge.textContent = String(count > 99 ? '99+' : count)
@@ -785,6 +848,7 @@ function petCreateOverlay(deps) {
     root.setAttribute('data-state', 'drag')
     dragDirection = 'right'
     syncSpriteAction()
+    syncIdleVideo()
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp, { once: true })
     window.addEventListener('pointercancel', onPointerUp, { once: true })

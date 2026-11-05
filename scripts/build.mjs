@@ -17,12 +17,13 @@
  *   2. **token 名校验**：样式里用到的每个 `--dsw-*` 必须能在当前安装的 DSH
  *      ui-theme 里找到——官方改名时立刻失败，而不是等哪天颜色不对再排查；
  *   3. **占位符校验**：CSS 占位符必须正好出现一次，防止漏注入/重复注入；
- *   4. **素材校验**：位图角色引用的 assets/ 文件必须存在、格式受支持、体积在预算内
- *      （host 半按文件白名单直供，缺文件会变成页面上一块空白，构建期就该拦住）。
+ *   4. **素材校验**：位图角色引用的 assets/ 文件必须存在、格式受支持、体积在预算内，
+ *      再把占位符换成 `/pet/assets/<文件名>`（host 半按白名单直供）；缺文件会变成
+ *      页面上一块空白，构建期就该拦住。
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -115,22 +116,26 @@ function checkTokens(css) {
 
 /** 读出所有源文件并做基础校验。 */
 /**
- * 素材内联：源码里写 `__DSH_PET_ASSET_<NAME>__` 占位符，构建时换成 `assets/<name>.<ext>`
- * 的 data URI（位图 webp/png，以及原生动作视频 webm）。体积预算 768KB（base64 前），
- * 超了说明该降采样——桌宠素材不该比整个客户端 bundle 还大。
+ * 素材直供：源码里写 `__DSH_PET_ASSET_<NAME>__` 占位符，构建时换成
+ * `/pet/assets/<name>.<ext>`（host 半的 ASSETS_PATH 白名单直供，带 ETag）。
+ *
+ * 2026-11-05 之前是 base64 内联：12 条动作视频被两只形象共用，同一份素材内联两遍，
+ * bundle 涨到 3.8MB。换成 URL 后 bundle 只剩代码，抓一次就进浏览器缓存。
+ * 单文件预算 768KB，超了说明该降采样。
  */
+const ASSET_URL_PREFIX = '/pet/assets'
 const ASSET_BUDGET_BYTES = 768 * 1024
 const ASSET_PLACEHOLDER = /__DSH_PET_ASSET_([A-Z0-9_]+)__/g
 const ASSET_TYPES = { webp: 'image/webp', png: 'image/png', webm: 'video/webm' }
 
-function inlineAssets(body) {
+function assetUrls(body) {
   const problems = []
-  const used = new Set()
+  const used = new Map()
   const out = body.replace(ASSET_PLACEHOLDER, (whole, name) => {
     const base = name.toLowerCase()
     // 占位符里连字符会变成下划线（标识符限制），两种写法都找一遍
     const bases = [base, base.replace(/_/g, '-')]
-    for (const [ext, type] of Object.entries(ASSET_TYPES)) {
+    for (const [ext] of Object.entries(ASSET_TYPES)) {
       const path = bases.map((candidate) => join(ROOT, 'assets', `${candidate}.${ext}`)).find((file) => existsSync(file))
       if (!path) continue
       const bytes = readFileSync(path)
@@ -138,13 +143,18 @@ function inlineAssets(body) {
         problems.push(`素材超预算：assets/${base}.${ext} 是 ${(bytes.byteLength / 1024).toFixed(0)}KB，上限 ${ASSET_BUDGET_BYTES / 1024}KB（降采样再接）`)
         return whole
       }
-      used.add(`${base}.${ext} (${(bytes.byteLength / 1024).toFixed(0)}KB)`)
-      return `data:${type};base64,${bytes.toString('base64')}`
+      const file = basename(path)
+      used.set(file, bytes.byteLength)
+      return `${ASSET_URL_PREFIX}/${file}`
     }
     problems.push(`素材缺失：assets/${base}.webp / .png / .webm（源码里的 ${whole} 没有对应文件）`)
     return whole
   })
-  return { out, used: [...used], problems }
+  return {
+    out,
+    used: [...used.entries()].map(([file, bytes]) => `${file} (${(bytes / 1024).toFixed(0)}KB)`),
+    problems,
+  }
 }
 
 function readSources() {
@@ -169,7 +179,7 @@ function render() {
   const pkg = readPkg()
   const css = readFileSync(CSS_PATH, 'utf8')
   const sources = readSources()
-  const assets = inlineAssets(sources)
+  const assets = assetUrls(sources)
   const body = assets.out
 
   if (!body.includes(CSS_PLACEHOLDER)) fail('main.js 缺少 CSS 占位符')
@@ -206,7 +216,7 @@ if (args.has('--check')) {
   if (!existsSync(OUT_PATH)) fail('client.js 不存在，请先运行 node scripts/build.mjs')
   const current = readFileSync(OUT_PATH, 'utf8')
   if (current !== bundle) fail('client.js 与源码不一致，请运行 node scripts/build.mjs 重新生成')
-  console.log(`✓ client.js 与源码一致（${(bundle.length / 1024).toFixed(1)}KB，${definedCount} 个 --dsw-* token、${assets.length} 个素材已内联核对）`)
+  console.log(`✓ client.js 与源码一致（${(bundle.length / 1024).toFixed(1)}KB，${definedCount} 个 --dsw-* token、${assets.length} 个素材 URL 核对）`)
   process.exit(0)
 }
 
@@ -216,6 +226,6 @@ const tokens = collectTokens(readFileSync(CSS_PATH, 'utf8'))
 console.log(`✓ client.js 已生成：${(bundle.length / 1024).toFixed(1)}KB`)
 console.log(`  源文件 ${SOURCES.length} 个：${SOURCES.join(', ')}`)
 console.log(`  样式 token：定义 ${tokens.defined.size} 个，引用 ${tokens.used.size} 个`)
-for (const asset of assets) console.log(`  素材：${asset}（已内联为 data URI）`)
+for (const asset of assets) console.log(`  素材：${asset}（${ASSET_URL_PREFIX}/…）`)
 if (!existsSync(CONFIG_PATH)) console.warn(`⚠ 缺少 ${CONFIG_PATH}（token 校验会走兜底路径）`)
 void readdirSync

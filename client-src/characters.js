@@ -109,11 +109,12 @@ const PET_SPRITE_GAZE = {
 function petSpritePack(url, { rows = 9, gaze = false } = {}) {
   const sprite = {
     /**
-     * 素材占位符：构建时由 scripts/build.mjs 把 assets/<名字>.webp 内联成 data URI。
+     * 素材占位符：构建时由 scripts/build.mjs 换成 `/pet/assets/<名字>.webp`。
      *
-     * 为什么不走 host 静态路由：那要多注册一条 webServer 路由、多一次 HTTP 往返，
-     * 而且补丁式插件加路由后必须重启 DSH 才生效（没有 HMR）。内联进 bundle 换
-     * 「单文件部署 + 刷新即生效」，构建期有体积预算校验兜底。
+     * 2026-11-05 之前是 base64 内联（单文件部署、刷新即生效），但 12 条动作视频被两只
+     * 形象共用、同一份素材内联两遍，bundle 涨到 3.8MB；改成 host 半的 ASSETS_PATH
+     * 白名单直供（带 ETag 回源校验）后 bundle 只剩代码。代价：补丁式插件加路由要重启
+     * 一次 DSH 才生效（没有 HMR）。
      */
     url,
     frameW: 192,
@@ -531,9 +532,15 @@ function petSpriteMarkup(id) {
   if (!sprite) return ''
   // 后两层是「原生动作」：优先用一条透明视频（<video>），播不了再退回胶片条
   // （横向 WebP + 逐帧 background-position）。都是动作期间盖住位图本体。
+  // 第三层是常驻 idle 视频：只给有 IDLE_VIDEO 的形象，闲时顶掉位图 idle 帧，动作/注视时让位
+  const idle = petIdleVideo(id)
+  const idleVideo = idle
+    ? `<video class="dsh-pet-idle" data-sprite-idle="${id}" muted loop playsinline preload="none" aria-hidden="true"></video>`
+    : ''
   return `<div class="dsh-pet-sprite" data-sprite="${id}" data-action="idle" aria-hidden="true"></div>`
     + `<div class="dsh-pet-clip" data-sprite-clip="${id}" aria-hidden="true"></div>`
     + `<video class="dsh-pet-video" data-sprite-video="${id}" muted playsinline preload="none" aria-hidden="true"></video>`
+    + idleVideo
 }
 
 /** 设置页卡片里的小预览（矢量走 SVG，位图取图集第一格，自备图直接缩略）。 */
@@ -615,6 +622,21 @@ function petActionVideo(characterId, actionId) {
 
 function petHasVideos(characterId) {
   return Boolean(PET_ACTION_VIDEOS[characterId])
+}
+
+/**
+ * 常驻 idle 视频（只有默认 pilot 有）：3.75s 透明 WebM 循环。
+ *
+ * 位图 idle 只有 6 帧、靠 CSS steps 换帧，看久了像定格；这条是图生视频（Wan2.2-I2V）
+ * 抽出的连续呼吸/眨眼。画布与动作视频同一套（384×416 / 角色高 396 / 脚底基线 406），
+ * 所以渲染层直接当 192×208 的层摆，从 idle 切到动作不会跳位置。
+ */
+const IDLE_VIDEO = { url: '__DSH_PET_ASSET_IDLE_LOOP__', seconds: 3.75 }
+
+const PET_IDLE_VIDEOS = { pilot: IDLE_VIDEO }
+
+function petIdleVideo(characterId) {
+  return PET_IDLE_VIDEOS[characterId] ?? null
 }
 
 /** 胶片条需要的 CSS：图片、background-size（N 格）与逐帧 keyframes。 */

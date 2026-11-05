@@ -157,10 +157,12 @@ test('原生动作：胶片条与透明视频都只接合格素材，时长必�
       assert.ok(table[action.id], `${character.id}/${action.id} 缺少原生动作视频`)
     }
   }
-  assert.match(bundle, /data:video\/webm;base64,/, '构建产物里没有内联 webm（忘了 npm run build？）')
+  // 2026-11-05 起素材走 host 直供：bundle 里只留 URL，不再内联 base64
+  assert.match(bundle, /\/pet\/assets\/anim-cheer\.webm/, '构建产物里没有动作视频 URL（忘了 npm run build？）')
+  assert.ok(!bundle.includes('data:video/webm;base64,'), '动作视频不应再内联进 bundle')
 })
 
-test('位图形象：图集协议、动作表与构建期素材内联', () => {
+test('位图形象：图集协议、动作表与 host 直供素材', () => {
   const { get } = loadSources(['characters.js'])
   const characters = get('PET_CHARACTERS')
   assert.equal(characters.length, 2, '噜噜 + 图生视频试点 pilot')
@@ -228,7 +230,43 @@ test('位图形象：图集协议、动作表与构建期素材内联', () => {
   assert.ok(assetBytes < 512 * 1024, `图集 ${(assetBytes / 1024).toFixed(0)}KB 超出 512KB 预算`)
   const bundle = read('client.js')
   assert.ok(!bundle.includes('__DSH_PET_ASSET_'), '构建产物里不应残留素材占位符')
-  assert.match(bundle, /data:image\/webp;base64,[A-Za-z0-9+/=]{1000}/, '图集应内联为 data URI')
+  assert.match(bundle, /\/pet\/assets\/lulu\.webp/, '图集应走 host 直供 URL')
+  assert.ok(!bundle.includes('data:image/webp;base64,'), '图集不应再内联进 bundle')
+})
+
+test('常驻 idle 视频：只有默认 pilot 有，素材走 host 直供', () => {
+  const { get } = loadSources(['characters.js'])
+  const idle = get('petIdleVideo')('pilot')
+  assert.ok(idle, '默认形象 pilot 应有常驻 idle 视频')
+  assert.match(idle.url, /^__DSH_PET_ASSET_IDLE_LOOP__$/, '占位符名要与 assets/idle-loop.webm 对应')
+  assert.ok(idle.seconds > 2 && idle.seconds < 6, `idle 循环时长不合理：${idle.seconds}s`)
+  assert.equal(get('petIdleVideo')('lulu'), null, '经典 lulu 保留手绘 idle 帧，不挂视频')
+  assert.equal(get('petIdleVideo')('nope'), null, '未知形象不要凭空造出视频')
+
+  const markup = get('petSpriteMarkup')('pilot')
+  assert.match(markup, /class="dsh-pet-idle"/, 'pilot 的 DOM 要有 idle 视频层')
+  assert.ok(!get('petSpriteMarkup')('lulu').includes('dsh-pet-idle'), '经典 lulu 的 DOM 不该有 idle 视频层')
+
+  const asset = join(ROOT, 'assets', 'idle-loop.webm')
+  assert.ok(existsSync(asset), '缺少 assets/idle-loop.webm')
+  const bytes = readFileSync(asset).byteLength
+  assert.ok(bytes > 20_000 && bytes < 400_000, `idle 视频 ${(bytes / 1024).toFixed(0)}KB 超出合理范围`)
+
+  const bundle = read('client.js')
+  assert.match(bundle, /\/pet\/assets\/idle-loop\.webm/, 'bundle 里要有 idle 视频 URL')
+})
+
+test('构建产物：素材全部走 /pet/assets，引用的文件都在磁盘上', () => {
+  const bundle = read('client.js')
+  assert.ok(!bundle.includes('__DSH_PET_ASSET_'), '素材占位符必须全部替换')
+  const urls = [...new Set(bundle.match(/\/pet\/assets\/[a-z0-9-]+\.(?:webp|png|webm)/g) ?? [])]
+  assert.ok(urls.length >= 15, `素材 URL 太少：${urls.length}`)
+  for (const url of urls) {
+    const file = join(ROOT, 'assets', url.slice('/pet/assets/'.length))
+    assert.ok(existsSync(file), `bundle 引用了不存在的素材：${url}`)
+  }
+  // 换 URL 之后 bundle 应该只有代码量级（之前内联 3.8MB）
+  assert.ok(bundle.length < 400 * 1024, `bundle ${(bundle.length / 1024).toFixed(0)}KB 超预算：素材又内联回去了？`)
 })
 
 test('16 向注视：角度→注视帧→图集格子', () => {

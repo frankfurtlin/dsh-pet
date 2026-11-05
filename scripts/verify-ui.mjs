@@ -476,13 +476,13 @@ async function main() {
       const style = sprite ? getComputedStyle(sprite) : null
       const out = {
         char: root.getAttribute('data-char'),
-        inline: (style?.backgroundImage ?? '').startsWith('url("data:image/webp'),
+        served: /\/pet\/assets\/lulu\.webp/.test(style?.backgroundImage ?? ''),
         width: Math.round(sprite?.getBoundingClientRect().width ?? 0),
       }
       document.body.removeAttribute('data-ds-dark-theme')
       return out
     })
-    check(viewport.width, '深色主题下位图噜噜照常渲染（图集还在）', dark.char === 'lulu' && dark.inline && dark.width > 40, `char=${dark.char} inline=${dark.inline} w=${dark.width}px`)
+    check(viewport.width, '深色主题下位图噜噜照常渲染（图集走 host 直供）', dark.char === 'lulu' && dark.served && dark.width > 40, `char=${dark.char} served=${dark.served} w=${dark.width}px`)
 
     // 截图留证
     const shot = join(OUT_DIR, `pet-${viewport.width}x${viewport.height}.png`)
@@ -676,7 +676,53 @@ async function main() {
     }
   })
   check(WIDTHS[0].width, '噜噜走位图渲染分支', sprite.render === 'sprite', `data-render=${sprite.render}`)
-  check(WIDTHS[0].width, '图集已内联进 bundle（无外部请求）', /^url\("data:image\/webp;base64,/.test(sprite.image) && sprite.image.length > 200000, `${Math.round(sprite.image.length / 1024)}KB`)
+  check(WIDTHS[0].width, '图集走 host 直供（/pet/assets/lulu.webp）', /^url\("https?:\/\/[^"]*\/pet\/assets\/lulu\.webp"\)/.test(sprite.image), `${sprite.image.slice(0, 60)}…`)
+
+  // 素材直供路由：ETag 回源、404、穿越、非 GET 都要挡住（这是 host 半唯一的新增面）
+  const assetRoute = await page.evaluate(async () => {
+    const call = async (path, headers) => {
+      const response = await fetch(path, { headers })
+      const body = response.status === 200 ? await response.arrayBuffer() : null
+      return {
+        status: response.status,
+        type: response.headers.get('content-type'),
+        length: Number(response.headers.get('content-length') ?? 0),
+        etag: response.headers.get('etag'),
+        bytes: body?.byteLength ?? 0,
+      }
+    }
+    const cheer = await call('/pet/assets/anim-cheer.webm')
+    const revalidated = await call('/pet/assets/anim-cheer.webm', { 'if-none-match': cheer.etag })
+    const atlas = await call('/pet/assets/lulu.webp')
+    const missing = await call('/pet/assets/nope.webp')
+    const traversal = await call('/pet/assets/..%2Fpackage.json')
+    const post = await fetch('/pet/assets/anim-cheer.webm', { method: 'POST' })
+    return { cheer, revalidated, atlas, missing, traversal, postStatus: post.status }
+  })
+  check(
+    WIDTHS[0].width,
+    '素材直供：动作视频 200 + video/webm + 带 ETag',
+    assetRoute.cheer.status === 200 && assetRoute.cheer.type === 'video/webm' && assetRoute.cheer.bytes > 50_000 && Boolean(assetRoute.cheer.etag),
+    JSON.stringify(assetRoute.cheer),
+  )
+  check(
+    WIDTHS[0].width,
+    '素材直供：带 If-None-Match 回源拿 304（不重复传内容）',
+    assetRoute.revalidated.status === 304 && assetRoute.revalidated.bytes === 0,
+    JSON.stringify(assetRoute.revalidated),
+  )
+  check(
+    WIDTHS[0].width,
+    '素材直供：图集 200 image/webp',
+    assetRoute.atlas.status === 200 && assetRoute.atlas.type === 'image/webp' && assetRoute.atlas.bytes > 100_000,
+    JSON.stringify({ status: assetRoute.atlas.status, type: assetRoute.atlas.type, bytes: assetRoute.atlas.bytes }),
+  )
+  check(
+    WIDTHS[0].width,
+    '素材直供：未知素材 404 / 路径穿越 400 / 非 GET 405',
+    assetRoute.missing.status === 404 && assetRoute.traversal.status === 400 && assetRoute.postStatus === 405,
+    JSON.stringify({ missing: assetRoute.missing.status, traversal: assetRoute.traversal.status, post: assetRoute.postStatus }),
+  )
   check(WIDTHS[0].width, '默认动作是 idle', sprite.action === 'idle', `data-action=${sprite.action}`)
   const durationMs = Math.round(parseFloat(sprite.duration) * (sprite.duration.endsWith('ms') ? 1 : 1000))
   check(WIDTHS[0].width, 'idle 关键帧绑定且一轮 1100ms', sprite.animation === 'dsh-pet-sprite-lulu-idle' && durationMs === 1100, `${sprite.animation} ${sprite.duration}`)
@@ -802,7 +848,8 @@ async function main() {
       char: root.getAttribute('data-char'),
       animation: style.animationName,
       backgroundSize: style.backgroundSize,
-      inlineImage: /^url\("data:image\/webp;base64,/.test(style.backgroundImage),
+      servedImage: /^url\("https?:\/\/[^"]*\/pet\/assets\/lulu\.webp"\)/.test(style.backgroundImage),
+      idleLayers: root.querySelectorAll('.dsh-pet-idle').length,
       // 11 行图集：缩略图按 8 列 × 11 行缩放
       thumbRule: styles.includes("[data-char='lulu'] .dsh-pet-sprite-thumb { background-size: 800% 1100%"),
       // 至少 lulu 一张（用户自备的 u-*/a-* 形象会合法增加）
@@ -810,7 +857,8 @@ async function main() {
     }
   })
   check(WIDTHS[0].width, '位图噜噜走自己的动作表（idle 动画名带 lulu）', luluOnly.char === 'lulu' && luluOnly.animation === 'dsh-pet-sprite-lulu-idle', `data-char=${luluOnly.char} animation=${luluOnly.animation}`)
-  check(WIDTHS[0].width, '噜噜图集内联进 bundle（无外部请求）', luluOnly.inlineImage, `background-image=${luluOnly.inlineImage}`)
+  check(WIDTHS[0].width, '经典 lulu 图集走 host 直供', luluOnly.servedImage, `background-image=${luluOnly.servedImage}`)
+  check(WIDTHS[0].width, '经典 lulu 没有 idle 视频层（保留手绘 idle 帧）', luluOnly.idleLayers === 0, `idle 层=${luluOnly.idleLayers}`)
   check(WIDTHS[0].width, '位图缩略图按 11 行图集缩放（800%×1100%）', luluOnly.thumbRule, `backgroundSize=${luluOnly.backgroundSize}`)
 
   // ── 右键菜单落点：贴边（尤其右上角）不许被视口裁掉 ──────────────────
@@ -1102,7 +1150,9 @@ async function main() {
         duration: style?.animationDuration ?? null,
         size: style?.backgroundSize ?? null,
         videoDisplay: videoStyle?.display ?? null,
-        videoSrc: (video?.getAttribute('src') ?? '').slice(0, 24),
+        videoSrc: (video?.getAttribute('src') ?? '').slice(0, 160),
+        idleActive: root.hasAttribute('data-idle-video'),
+        idleDisplay: layerDisplay('.dsh-pet-idle'),
         videoPaused: video?.paused ?? null,
         videoTime: video?.currentTime ?? null,
         videoDuration: video?.duration ?? null,
@@ -1166,6 +1216,13 @@ async function main() {
       videoDisplay: getComputedStyle(root.querySelector('.dsh-pet-video')).display,
       clips: root.querySelectorAll('.dsh-pet-clip').length,
       videos: root.querySelectorAll('.dsh-pet-video').length,
+      // 常驻 idle 视频：pilot 专用，闲时顶掉位图 idle 帧
+      idleLayers: root.querySelectorAll('.dsh-pet-idle').length,
+      idleDisplay: getComputedStyle(root.querySelector('.dsh-pet-idle')).display,
+      idleSrc: root.querySelector('.dsh-pet-idle')?.currentSrc ?? '',
+      idlePaused: root.querySelector('.dsh-pet-idle')?.paused ?? null,
+      idleDuration: root.querySelector('.dsh-pet-idle')?.duration ?? 0,
+      spriteVisibility: getComputedStyle(sprite).visibility,
     }
   })
   check(
@@ -1182,6 +1239,18 @@ async function main() {
     JSON.stringify({ clip: pilotIdle.clipDisplay, video: pilotIdle.videoDisplay, clips: pilotIdle.clips, videos: pilotIdle.videos }),
   )
 
+  check(
+    WIDTHS[0].width,
+    'pilot 闲时用常驻 idle 视频（3.75s 循环，顶掉位图 idle 帧）',
+    pilotIdle.idleLayers === 1
+      && pilotIdle.idleDisplay === 'block'
+      && /\/pet\/assets\/idle-loop\.webm/.test(pilotIdle.idleSrc)
+      && pilotIdle.idlePaused === false
+      && Math.abs(pilotIdle.idleDuration - 3.75) < 0.2
+      && pilotIdle.spriteVisibility === 'hidden',
+    JSON.stringify({ layers: pilotIdle.idleLayers, display: pilotIdle.idleDisplay, src: pilotIdle.idleSrc, paused: pilotIdle.idlePaused, dur: pilotIdle.idleDuration, sprite: pilotIdle.spriteVisibility }),
+  )
+
   const pilotCheer = await playNativeAction('cheer')
   check(
     WIDTHS[0].width,
@@ -1192,7 +1261,7 @@ async function main() {
   check(
     WIDTHS[0].width,
     'pilot 鼓掌：透明 WebM 已加载并在播',
-    /^data:video\/webm/.test(pilotCheer.videoSrc) && pilotCheer.videoPaused === false && (pilotCheer.videoTime ?? 0) > 0.05,
+    /\/pet\/assets\/anim-cheer\.webm/.test(pilotCheer.videoSrc) && pilotCheer.videoPaused === false && (pilotCheer.videoTime ?? 0) > 0.05,
     JSON.stringify({ src: pilotCheer.videoSrc, paused: pilotCheer.videoPaused, t: pilotCheer.videoTime, dur: pilotCheer.videoDuration }),
   )
   check(
@@ -1211,6 +1280,12 @@ async function main() {
   )
   check(
     WIDTHS[0].width,
+    'pilot 鼓掌：常驻 idle 视频让位（不和动作视频叠着播）',
+    pilotCheer.idleActive === false && pilotCheer.idleDisplay === 'none',
+    JSON.stringify({ idleActive: pilotCheer.idleActive, idleDisplay: pilotCheer.idleDisplay }),
+  )
+  check(
+    WIDTHS[0].width,
     'pilot 鼓掌：本体与 SVG 道具/装扮层一起让位',
     pilotCheer.spriteVisibility === 'hidden' && pilotCheer.prop === 'none' && pilotCheer.outfit === 'none',
     JSON.stringify({ sprite: pilotCheer.spriteVisibility, prop: pilotCheer.prop, outfit: pilotCheer.outfit }),
@@ -1225,7 +1300,7 @@ async function main() {
   for (const id of ALL_ACTIONS) {
     const played = await playNativeAction(id)
     const ok = played.mode === 'video'
-      && played.videoSrc.startsWith('data:video/webm')
+      && played.videoSrc.includes('/pet/assets/anim-')
       && played.videoDisplay === 'block'
     if (!ok) missing.push({ id, act: played.act, mode: played.mode, src: played.videoSrc, display: played.videoDisplay })
     await page.waitForTimeout(120)
