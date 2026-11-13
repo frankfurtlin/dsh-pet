@@ -29,7 +29,7 @@ const PET_LEVEL_STEP = 50
  */
 const PET_DEFAULT_SETTINGS = {
   enabled: true,
-  character: 'pilot',
+  character: 'lulu',
   size: 104,
   dock: 'right',
   /** 自由拖拽落点（%），null 表示用 dock 的默认角 */
@@ -52,15 +52,21 @@ const PET_DEFAULT_SETTINGS = {
 }
 
 
-/** 一次性迁移：2026-11-05 起默认形象从经典噜噜换成图生视频版 pilot。 */
-const PET_DEFAULT_CHARACTER_MIGRATION_KEY = 'dsh-pet:migrate:v1-default-pilot'
+/** 一次性迁移：2026-11-13 起只剩一只内置形象（id `lulu`），把历史 id 归一。 */
+const PET_CHARACTER_MIGRATION_KEY = 'dsh-pet:migrate:v2-single-lulu'
 
-function petMigrateDefaultCharacter(settings, stored) {
+/** 历史上出现过的内置形象 id（`pilot` 是 11-05 ~ 11-13 的默认形象）。 */
+const PET_LEGACY_CHARACTER_IDS = new Set(['pilot'])
+
+function petMigrateCharacterId(settings, stored) {
   try {
-    if (!stored || localStorage.getItem(PET_DEFAULT_CHARACTER_MIGRATION_KEY)) return settings
-    localStorage.setItem(PET_DEFAULT_CHARACTER_MIGRATION_KEY, '1')
-    // 老默认就是 lulu；只有停在老默认上的用户跟随新默认，自己选过别的形象的不动
-    return stored.character === 'lulu' ? { ...settings, character: 'pilot' } : settings
+    if (!stored) return settings
+    // 迁移只做一次：用户后续自己写入的值（哪怕是历史 id）不再被覆盖
+    if (localStorage.getItem(PET_CHARACTER_MIGRATION_KEY)) return settings
+    const id = stored.character
+    if (typeof id !== 'string' || !PET_LEGACY_CHARACTER_IDS.has(id)) return settings
+    localStorage.setItem(PET_CHARACTER_MIGRATION_KEY, '1')
+    return { ...settings, character: 'lulu' }
   } catch {
     return settings
   }
@@ -110,7 +116,7 @@ function petDayDiff(from, to) {
 function petCreateStore() {
   const listeners = new Set()
   const storedSettings = petReadJson(PET_SETTINGS_KEY)
-  let settings = petMigrateDefaultCharacter({ ...PET_DEFAULT_SETTINGS, ...(storedSettings ?? {}) }, storedSettings)
+  let settings = petMigrateCharacterId({ ...PET_DEFAULT_SETTINGS, ...(storedSettings ?? {}) }, storedSettings)
   let growth = {
     affinity: 0,
     pets: 0,

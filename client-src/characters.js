@@ -1,16 +1,16 @@
 /**
- * 内置形象：3 只纯矢量宠物。
+ * 形象注册表：内置 1 只位图噜噜（+ 可选用户自备图片/动图形象）。
  *
- * 为什么不用位图 / spritesheet：
- *   · 体积——一套 12 帧、每帧 256px 的 webp 精灵图至少 300KB 起步，而这里三只
- *     角色加起来不到 20KB 源码，构建后进 bundle 也几乎不涨；
- *   · 清晰度——矢量在 76px（手机）到 200px（超大）之间任意缩放都不糊；位图形象走原分辨率图集（单格 192×208，200px 档 ≈ 0.96 倍缩）；
- *   · 换色——角色配色是 CSS 变量，深色主题下换一组值即可，不用另出一套图；
- *   · 差异更新——改一根尾巴就是改一行 path，不需要重出素材。
+ * 「专属动作」不再用 SVG 零件拼：每个动作是一条带 alpha 的透明 VP9 WebM
+ * （assets/anim-*.webm，由 scripts/video-to-webm.py 从绿幕视频逐帧抠像生成），
+ * 闲时再叠一条 3.75s 的常驻 idle 视频循环（assets/idle-loop.webm）。视频统一按
+ * 384×416 画布出（角色高 396、脚底基线 406），渲染层当作 192×208 的层铺在位图本体上，
+ * 所以动作 ↔ 待机切换不跳位置；播不了时退回胶片条（clip-cheer.webp）或程序化演出。
  *
- * 每只角色返回**同一套 class 骨架**（.dsh-pet-body / -belly / -accent / -line /
- * -blink / -breathe / -think / -alert / -happy / -zzz），所以 state.js 里的状态
- * 只切 root 上的 data-state，形象层完全不用知道状态是怎么来的。
+ * 位图图集（assets/lulu.webp）：8 列 × 11 行、单格 192×208、RGBA —— 行 0–8 是 9 组状态
+ * 动作（idle / 跑 / 挥手 / 跳 / 失败 / 等待 / 工作中 / 审阅…），行 9–10 是 16 向注视帧。
+ * 图集负责拖拽、注视、以及视频覆盖不到的赶状态切换；矢量形象（petSvg 兜底）与用户自备
+ * 形象走同一套 class 骨架，状态差异只体现在 root 的 data-state 上。
  *
  * 坐标系统一为 viewBox="0 0 100 100"，脚底贴 y=95，方便气泡/进度环对齐。
  */
@@ -148,19 +148,11 @@ function petSpritePack(url, { rows = 9, gaze = false } = {}) {
  */
 const PET_CHARACTERS = [
   {
-    // 默认形象（2026-11-05 起）：idle 行是图生视频抽帧的原生呼吸，其余动作行沿用原图集；
-    // 12 个专属动作全部走透明 WebM 视频（见 PET_ACTION_VIDEOS）。
-    id: 'pilot',
+    // 内置形象：位图图集 + 12 条透明 WebM 动作 + 常驻 idle 视频循环（见下方各表）
+    id: 'lulu',
     label: { zh: '噜噜', en: 'Lulu' },
     kind: 'sprite',
-    sprite: petSpritePack('__DSH_PET_ASSET_LULU_IDLE_V2__', { rows: 11, gaze: true }),
-  },
-  {
-    // 经典噜噜：上游原版图集（idle 是手绘 6 帧），保留给喜欢原版待机的人
-    id: 'lulu',
-    label: { zh: '噜噜（经典）', en: 'Lulu (classic)' },
-    kind: 'sprite',
-    // 11 行图集：第 0–8 行是 9 组动作，第 9–10 行是 16 向注视帧
+    // 11 行图集：第 0–8 行是 9 组状态动作，第 9–10 行是 16 向注视帧
     sprite: petSpritePack('__DSH_PET_ASSET_LULU__', { rows: 11, gaze: true }),
   },
 ]
@@ -532,7 +524,7 @@ function petSpriteMarkup(id) {
   if (!sprite) return ''
   // 后两层是「原生动作」：优先用一条透明视频（<video>），播不了再退回胶片条
   // （横向 WebP + 逐帧 background-position）。都是动作期间盖住位图本体。
-  // 第三层是常驻 idle 视频：只给有 IDLE_VIDEO 的形象，闲时顶掉位图 idle 帧，动作/注视时让位
+  // 第三层是常驻 idle 视频：位图形象闲时用它顶掉图集 idle 帧，动作/注视/拖拽时让位
   const idle = petIdleVideo(id)
   const idleVideo = idle
     ? `<video class="dsh-pet-idle" data-sprite-idle="${id}" muted loop playsinline preload="none" aria-hidden="true"></video>`
@@ -545,105 +537,79 @@ function petSpriteMarkup(id) {
 
 /** 设置页卡片里的小预览（矢量走 SVG，位图取图集第一格，自备图直接缩略）。 */
 /**
- * 原生动作片段表：actionId → 横向胶片条。
+ * id 是否登记为位图形象。
  *
- * 渲染层在动作期间把它铺在角色位置上（隐藏位图本体和 SVG 道具），
- * 逐帧推 background-position —— 和位图动作同一套机制，不需要 GIF 解码。
+ * 和 petIsSprite 的区别：这里不跟随 petCharacter 的「未知 id 回落默认形象」，
+ * 所以未知 id 不会凭空拿到动作视频/胶片条/idle 视频（兜底只负责渲染层的默认外观）。
  */
-// 12 帧 × 150ms = 1800ms，正好等于「鼓掌」动作时长（actions.js 里 seconds: 1.8）
-const CLIP_CHEER = { url: '__DSH_PET_ASSET_CLIP_CHEER__', frameW: 192, frameH: 208, frames: 12, stepMs: 150 }
-
-// 「蹦跶」的 i2v 片段（assets/clip-hop.webp）没接进来：模型没守住「大小不变」，
-// 12 帧全是头肩大特写、帽子与脚出画，铺上去比 SVG 组件更像 bug。等重生成合格素材再接，
-// 在那之前 hop 继续走程序化表演（actions.js 的 effect），不影响 data-act 与粒子效果。
-const PET_ACTION_CLIPS = {
-  lulu: { cheer: CLIP_CHEER },
-  pilot: { cheer: CLIP_CHEER },
-}
-
-function petActionClip(characterId, actionId) {
-  const clips = PET_ACTION_CLIPS[characterId]
-  if (!clips) return null
-  return clips[actionId] ?? null
-}
-
-function petHasClips(characterId) {
-  return Boolean(PET_ACTION_CLIPS[characterId])
+function petRegisteredSprite(characterId) {
+  return PET_CHARACTERS.some((character) => character.id === characterId && character.kind === 'sprite')
 }
 
 /**
- * 原生动作视频表：actionId → 一条带 alpha 的 VP9 WebM（由 scripts/video-to-webm.py 生成）。
+ * 胶片条回退表：actionId → 横向整条 WebP。
  *
- * 这是「专属动作」的正确形态：帧率/时长不再受 8×11 图集协议约束，浏览器用 <video>
- * 直接播。画布按单元格 192×208 的 2 倍（384×416）输出，角色高 396、基线 406，所以
- * 渲染层只要把它铺成 192×208 的层，就和位图本体严丝合缝对齐。
- * 播不了（浏览器不支持 alpha WebM / 解码失败）时自动退回 PET_ACTION_CLIPS 的胶片条。
+ * 平时动作走透明 WebM；这里只在「关掉动效」或视频解码失败时顶上，渲染层逐帧推
+ * background-position（不走 GIF 解码），帧数/时长与 actions.js 对齐，两条链路看不出跳变。
  */
+// 12 帧 × 150ms = 1800ms，贴着「鼓掌」的 1.8s 动作
+const CLIP_CHEER = { url: '__DSH_PET_ASSET_CLIP_CHEER__', frameW: 192, frameH: 208, frames: 12, stepMs: 150 }
 
-// 原生动作视频：一动作一条透明 VP9 WebM（MiniMax-Video-H3-Max 480P/5s 绿幕 → video-to-webm.py）。
-// 画布 384×416（= 单格 192×208 的 2 倍），角色高 396 / 脚底基线 406，与 .dsh-pet-sprite 同构；
-// seconds 贴近 actions.js 里该动作时长（渲染层按动作时长收尾，超出部分会被截掉）。
+// 「蹦跶」也做过一版 i2v 胶片条，但模型没守住「大小不变」：12 帧全是头肩大特写、帽子与脚
+// 出画，铺上去比程序化演出更像 bug —— 素材已删，hop 继续走 actions.js 的 effect 表演。
+const PET_ACTION_CLIPS = { cheer: CLIP_CHEER }
+
+function petActionClip(characterId, actionId) {
+  if (!petRegisteredSprite(characterId)) return null
+  return PET_ACTION_CLIPS[actionId] ?? null
+}
+
+/**
+ * 原生动作视频表：actionId → 一条带 alpha 的 VP9 WebM。
+ *
+ * 一动作一条（MiniMax-Video-H3-Max 480P/5s 绿幕 → scripts/video-to-webm.py 抠像压缩），
+ * 画布 384×416（单格 192×208 的 2 倍）、角色高 396、脚底基线 406，和 .dsh-pet-sprite 同构；
+ * seconds 贴近 actions.js 的动作时长（渲染层按动作时长收尾，多出来的帧会被截掉）。
+ */
 const PET_ACTION_VIDEOS = {
-  lulu: {
-    newyear: { url: '__DSH_PET_ASSET_ANIM_NEWYEAR__', seconds: 2.21 },
-    lion: { url: '__DSH_PET_ASSET_ANIM_LION__', seconds: 2.58 },
-    fireworks: { url: '__DSH_PET_ASSET_ANIM_FIREWORKS__', seconds: 2.42 },
-    redpacket: { url: '__DSH_PET_ASSET_ANIM_REDPACKET__', seconds: 2.21 },
-    fu: { url: '__DSH_PET_ASSET_ANIM_FU__', seconds: 2.42 },
-    dumpling: { url: '__DSH_PET_ASSET_ANIM_DUMPLING__', seconds: 2.21 },
-    shy: { url: '__DSH_PET_ASSET_ANIM_SHY__', seconds: 1.79 },
-    cheer: { url: '__DSH_PET_ASSET_ANIM_CHEER__', seconds: 1.83 },
-    dizzy: { url: '__DSH_PET_ASSET_ANIM_DIZZY__', seconds: 2.0 },
-    spin: { url: '__DSH_PET_ASSET_ANIM_SPIN__', seconds: 1.21 },
-    roll: { url: '__DSH_PET_ASSET_ANIM_ROLL__', seconds: 1.58 },
-    hop: { url: '__DSH_PET_ASSET_ANIM_HOP__', seconds: 1.21 },
-  },
-  pilot: {
-    newyear: { url: '__DSH_PET_ASSET_ANIM_NEWYEAR__', seconds: 2.21 },
-    lion: { url: '__DSH_PET_ASSET_ANIM_LION__', seconds: 2.58 },
-    fireworks: { url: '__DSH_PET_ASSET_ANIM_FIREWORKS__', seconds: 2.42 },
-    redpacket: { url: '__DSH_PET_ASSET_ANIM_REDPACKET__', seconds: 2.21 },
-    fu: { url: '__DSH_PET_ASSET_ANIM_FU__', seconds: 2.42 },
-    dumpling: { url: '__DSH_PET_ASSET_ANIM_DUMPLING__', seconds: 2.21 },
-    shy: { url: '__DSH_PET_ASSET_ANIM_SHY__', seconds: 1.79 },
-    cheer: { url: '__DSH_PET_ASSET_ANIM_CHEER__', seconds: 1.83 },
-    dizzy: { url: '__DSH_PET_ASSET_ANIM_DIZZY__', seconds: 2.0 },
-    spin: { url: '__DSH_PET_ASSET_ANIM_SPIN__', seconds: 1.21 },
-    roll: { url: '__DSH_PET_ASSET_ANIM_ROLL__', seconds: 1.58 },
-    hop: { url: '__DSH_PET_ASSET_ANIM_HOP__', seconds: 1.21 },
-  },
+  newyear: { url: '__DSH_PET_ASSET_ANIM_NEWYEAR__', seconds: 2.21 },
+  lion: { url: '__DSH_PET_ASSET_ANIM_LION__', seconds: 2.58 },
+  fireworks: { url: '__DSH_PET_ASSET_ANIM_FIREWORKS__', seconds: 2.42 },
+  redpacket: { url: '__DSH_PET_ASSET_ANIM_REDPACKET__', seconds: 2.21 },
+  fu: { url: '__DSH_PET_ASSET_ANIM_FU__', seconds: 2.42 },
+  dumpling: { url: '__DSH_PET_ASSET_ANIM_DUMPLING__', seconds: 2.21 },
+  shy: { url: '__DSH_PET_ASSET_ANIM_SHY__', seconds: 1.79 },
+  cheer: { url: '__DSH_PET_ASSET_ANIM_CHEER__', seconds: 1.83 },
+  dizzy: { url: '__DSH_PET_ASSET_ANIM_DIZZY__', seconds: 2.0 },
+  spin: { url: '__DSH_PET_ASSET_ANIM_SPIN__', seconds: 1.21 },
+  roll: { url: '__DSH_PET_ASSET_ANIM_ROLL__', seconds: 1.58 },
+  hop: { url: '__DSH_PET_ASSET_ANIM_HOP__', seconds: 1.21 },
 }
 
 function petActionVideo(characterId, actionId) {
-  const videos = PET_ACTION_VIDEOS[characterId]
-  if (!videos) return null
-  return videos[actionId] ?? null
-}
-
-function petHasVideos(characterId) {
-  return Boolean(PET_ACTION_VIDEOS[characterId])
+  if (!petRegisteredSprite(characterId)) return null
+  return PET_ACTION_VIDEOS[actionId] ?? null
 }
 
 /**
- * 常驻 idle 视频（只有默认 pilot 有）：3.75s 透明 WebM 循环。
+ * 常驻 idle 视频：3.75s 透明 WebM 循环（assets/idle-loop.webm）。
  *
- * 位图 idle 只有 6 帧、靠 CSS steps 换帧，看久了像定格；这条是图生视频（Wan2.2-I2V）
- * 抽出的连续呼吸/眨眼。画布与动作视频同一套（384×416 / 角色高 396 / 脚底基线 406），
- * 所以渲染层直接当 192×208 的层摆，从 idle 切到动作不会跳位置。
+ * 图集 idle 只有 6 帧、靠 CSS steps 换帧，看久了像定格；这条是真实建模噜噜的连续
+ * 呼吸/眨眼（images/pilot/idle3.mp4 里 60 帧循环段，首尾差 1.31）。画布与动作视频同一套，
+ * 闲时切到动作不跳位置；关动效 / 注视 / 拖拽时让位回图集帧。
  */
 const IDLE_VIDEO = { url: '__DSH_PET_ASSET_IDLE_LOOP__', seconds: 3.75 }
 
-const PET_IDLE_VIDEOS = { pilot: IDLE_VIDEO }
-
 function petIdleVideo(characterId) {
-  return PET_IDLE_VIDEOS[characterId] ?? null
+  return petRegisteredSprite(characterId) ? IDLE_VIDEO : null
 }
 
-/** 胶片条需要的 CSS：图片、background-size（N 格）与逐帧 keyframes。 */
+/** 胶片条 CSS：每只位图形象 × 每个回退动作各生成一份逐帧关键帧。 */
 function petClipCss() {
   const blocks = []
-  for (const [characterId, clips] of Object.entries(PET_ACTION_CLIPS)) {
-    for (const [actionId, clip] of Object.entries(clips)) {
+  const characters = PET_CHARACTERS.filter((character) => character.kind === 'sprite').map((character) => character.id)
+  for (const characterId of characters) {
+    for (const [actionId, clip] of Object.entries(PET_ACTION_CLIPS)) {
       const total = clip.stepMs * clip.frames
       const name = `dsh-pet-clip-${characterId}-${actionId}`
       const frames = []

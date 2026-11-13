@@ -137,7 +137,7 @@ function petCreateSettingsPanel(deps) {
         .then((payload) => {
           if (!payload?.ok) return
           setSkinList(Array.isArray(payload.skins) ? payload.skins : [])
-          if (settings.character === id) update({ character: 'pilot' })
+          if (settings.character === id) update({ character: 'lulu' })
           onSkinsChanged?.()
         })
         .catch(() => {})

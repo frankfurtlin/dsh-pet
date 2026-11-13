@@ -83,81 +83,62 @@ test('包名、版本、补丁 id 三处一致', () => {
   assert.equal(pkg.engines, undefined, '不要声明 engines.dsh')
 })
 
-test('内置形象：默认 pilot（图生视频版噜噜）+ 经典 lulu', () => {
+test('内置形象：只有一只位图噜噜（12 动作全透明视频）', () => {
   const { get } = loadSources(['characters.js'])
   const characters = get('PET_CHARACTERS')
-  assert.equal(characters.length, 2, '默认 pilot + 经典 lulu')
-  // 2026-11-05 起默认形象换成图生视频版（pilot），经典图集排第二张卡
-  assert.equal(characters[0].id, 'pilot')
+  assert.equal(characters.length, 1, '内置形象只剩一只')
+  assert.equal(characters[0].id, 'lulu')
   assert.equal(characters[0].label.zh, '噜噜')
-  assert.equal(characters[1].id, 'lulu')
-  assert.equal(characters[1].label.zh, '噜噜（经典）')
-  for (const character of characters) {
-    assert.equal(character.kind, 'sprite', '两只都走位图分支，不再有矢量形象')
-    // 位图角色的配色烘焙在素材里，不该再挂 palette
-    assert.equal(character.palette, undefined)
-  }
+  assert.equal(characters[0].kind, 'sprite', '走位图分支，不再有矢量形象')
+  // 位图角色的配色烘焙在素材里，不该再挂 palette
+  assert.equal(characters[0].palette, undefined)
   // 未知 id 要回落到默认形象，别让坏配置把宠物整只弄没
-  assert.equal(get('petCharacter')('nope').id, 'pilot')
+  assert.equal(get('petCharacter')('nope').id, 'lulu')
 })
 
-test('原生动作：胶片条与透明视频都只接合格素材，时长必须等于动作时长', () => {
+test('原生动作：12 条透明视频 + 胶片条回退，时长都要贴合动作', () => {
   const { get } = loadSources(['characters.js', 'actions.js'])
   const clips = get('PET_ACTION_CLIPS')
+  const videos = get('PET_ACTION_VIDEOS')
   const actions = get('PET_ACTIONS')
   const byId = new Map(actions.map((action) => [action.id, action]))
 
-  for (const character of get('PET_CHARACTERS')) {
-    const table = clips[character.id]
-    assert.ok(table, `${character.id} 没有片段表`)
-    for (const [actionId, clip] of Object.entries(table)) {
-      // 每条片段都必须是整帧横向排列，且逐帧推 background-position 的机制依赖这两个值
-      assert.equal(clip.frames * clip.frameW, clip.frames * 192, `${character.id}/${actionId} 帧宽`)
-      assert.equal(clip.frameH, 208, `${character.id}/${actionId} 帧高`)
-      assert.ok(clip.frames > 1, `${character.id}/${actionId} 至少两帧`)
-      const action = byId.get(actionId)
-      assert.ok(action, `${character.id}/${actionId} 在 PET_ACTIONS 里不存在`)
-      assert.equal(
-        clip.stepMs * clip.frames,
-        action.seconds * 1000,
-        `${character.id}/${actionId} 片段总时长必须等于动作时长，否则胶片条和动作会错位`,
-      )
-    }
+  // 胶片条只在「关动效 / 视频解码失败」时顶上，逐帧推 background-position 依赖这两个值
+  for (const [actionId, clip] of Object.entries(clips)) {
+    assert.equal(clip.frames * clip.frameW, clip.frames * 192, `${actionId} 帧宽`)
+    assert.equal(clip.frameH, 208, `${actionId} 帧高`)
+    assert.ok(clip.frames > 1, `${actionId} 至少两帧`)
+    const action = byId.get(actionId)
+    assert.ok(action, `${actionId} 在 PET_ACTIONS 里不存在`)
+    assert.equal(
+      clip.stepMs * clip.frames,
+      action.seconds * 1000,
+      `${actionId} 片段总时长必须等于动作时长，否则胶片条和动作会错位`,
+    )
   }
+  // hop 的旧 i2v 素材整段出画（头肩大特写、帽子与脚被裁），明确不接胶片条；
+  // 现在 hop 走透明视频。这条回归防的是「不合格素材被顺手登记回来」。
+  assert.equal(clips.hop, undefined, 'hop 的旧素材不合格，不该接胶片条')
 
-  // hop 的旧 i2v 素材整段出画（头肩大特写、帽子与脚被裁），明确不接胶片条：
-  // 回归这条是为了防止「素材还在 assets/ 里就被顺手登记进来」。现在 hop 走透明视频。
-  for (const character of get('PET_CHARACTERS')) {
-    assert.equal(clips[character.id].hop, undefined, 'hop 的素材不合格，不该接原生片段')
-  }
-
-  // 透明视频（<video> 原生动作）：源素材必须真的在 assets/ 里、且已经内联进构建产物
-  const videos = get('PET_ACTION_VIDEOS')
+  // 透明视频（<video> 原生动作）：一动作一条，源素材必须在 assets/ 里
   const bundle = read('client.js')
-  for (const character of get('PET_CHARACTERS')) {
-    const table = videos[character.id]
-    assert.ok(table, `${character.id} 没有原生动作视频表`)
-    for (const [actionId, video] of Object.entries(table)) {
-      const action = byId.get(actionId)
-      assert.ok(action, `${character.id}/${actionId} 在 PET_ACTIONS 里不存在`)
-      const match = /^__DSH_PET_ASSET_([A-Z0-9_]+)__$/.exec(video.url)
-      assert.ok(match, `${character.id}/${actionId} 必须是构建期占位符，不能直接写 URL`)
-      const file = `assets/${match[1].toLowerCase().replace(/_/g, '-')}.webm`
-      assert.ok(existsSync(join(ROOT, file)), `${file} 不存在`)
-      assert.ok(statSync(join(ROOT, file)).size > 1024, `${file} 太小，像是空文件`)
-      // 视频比动作略长没关系（演完就停），但不能短太多，否则动作后半段会切回位图
-      assert.ok(
-        Math.abs(video.seconds - (action.seconds ?? 2)) <= 0.3,
-        `${character.id}/${actionId} 视频 ${video.seconds}s 与动作 ${action.seconds}s 差太多`,
-      )
-    }
-    // 12 个动作现在都有原生视频（一动作一条透明 WebM），缺一个就说明登记表漏了
-    assert.equal(Object.keys(table).length, get('PET_ACTIONS').length, `${character.id} 动作视频数量对不上`)
-    for (const action of get('PET_ACTIONS')) {
-      assert.ok(table[action.id], `${character.id}/${action.id} 缺少原生动作视频`)
-    }
+  for (const [actionId, video] of Object.entries(videos)) {
+    const action = byId.get(actionId)
+    assert.ok(action, `${actionId} 在 PET_ACTIONS 里不存在`)
+    const match = /^__DSH_PET_ASSET_([A-Z0-9_]+)__$/.exec(video.url)
+    assert.ok(match, `${actionId} 必须是构建期占位符，不能直接写 URL`)
+    const file = `assets/${match[1].toLowerCase().replace(/_/g, '-')}.webm`
+    assert.ok(existsSync(join(ROOT, file)), `${file} 不存在`)
+    assert.ok(statSync(join(ROOT, file)).size > 1024, `${file} 太小，像是空文件`)
+    // 视频比动作略长没关系（演完就停），但不能短太多，否则动作后半段会切回位图
+    assert.ok(
+      Math.abs(video.seconds - (action.seconds ?? 2)) <= 0.3,
+      `${actionId} 视频 ${video.seconds}s 与动作 ${action.seconds}s 差太多`,
+    )
   }
-  // 2026-11-05 起素材走 host 直供：bundle 里只留 URL，不再内联 base64
+  assert.equal(Object.keys(videos).length, actions.length, '12 个动作要各有一条透明 WebM')
+  for (const action of actions) assert.ok(videos[action.id], `${action.id} 缺少原生动作视频`)
+  // 素材走 host 直供：bundle 里只留 URL，不再内联 base64
   assert.match(bundle, /\/pet\/assets\/anim-cheer\.webm/, '构建产物里没有动作视频 URL（忘了 npm run build？）')
   assert.ok(!bundle.includes('data:video/webm;base64,'), '动作视频不应再内联进 bundle')
 })
@@ -165,7 +146,7 @@ test('原生动作：胶片条与透明视频都只接合格素材，时长必�
 test('位图形象：图集协议、动作表与 host 直供素材', () => {
   const { get } = loadSources(['characters.js'])
   const characters = get('PET_CHARACTERS')
-  assert.equal(characters.length, 2, '噜噜 + 图生视频试点 pilot')
+  assert.equal(characters.length, 1, '只剩一只内置噜噜')
 
   const lulu = characters.find((character) => character.id === 'lulu')
   assert.ok(lulu, '缺少噜噜')
@@ -234,18 +215,16 @@ test('位图形象：图集协议、动作表与 host 直供素材', () => {
   assert.ok(!bundle.includes('data:image/webp;base64,'), '图集不应再内联进 bundle')
 })
 
-test('常驻 idle 视频：只有默认 pilot 有，素材走 host 直供', () => {
+test('常驻 idle 视频：位图形象闲时用 3.75s 循环，素材走 host 直供', () => {
   const { get } = loadSources(['characters.js'])
-  const idle = get('petIdleVideo')('pilot')
-  assert.ok(idle, '默认形象 pilot 应有常驻 idle 视频')
+  const idle = get('petIdleVideo')('lulu')
+  assert.ok(idle, '内置噜噜应有常驻 idle 视频')
   assert.match(idle.url, /^__DSH_PET_ASSET_IDLE_LOOP__$/, '占位符名要与 assets/idle-loop.webm 对应')
   assert.ok(idle.seconds > 2 && idle.seconds < 6, `idle 循环时长不合理：${idle.seconds}s`)
-  assert.equal(get('petIdleVideo')('lulu'), null, '经典 lulu 保留手绘 idle 帧，不挂视频')
   assert.equal(get('petIdleVideo')('nope'), null, '未知形象不要凭空造出视频')
 
-  const markup = get('petSpriteMarkup')('pilot')
-  assert.match(markup, /class="dsh-pet-idle"/, 'pilot 的 DOM 要有 idle 视频层')
-  assert.ok(!get('petSpriteMarkup')('lulu').includes('dsh-pet-idle'), '经典 lulu 的 DOM 不该有 idle 视频层')
+  const markup = get('petSpriteMarkup')('lulu')
+  assert.match(markup, /class="dsh-pet-idle"/, '位图形象的 DOM 要有 idle 视频层')
 
   const asset = join(ROOT, 'assets', 'idle-loop.webm')
   assert.ok(existsSync(asset), '缺少 assets/idle-loop.webm')
@@ -319,18 +298,18 @@ test('中英字典键集合一致，占位符能正确替换', () => {
   assert.equal(locale(undefined), 'en')
 })
 
-test('store：默认形象迁移（老数据 lulu → pilot，只迁一次）', () => {
+test('store：历史形象 id 迁移（pilot → lulu，只迁一次）', () => {
   const localStorage = fakeLocalStorage()
-  localStorage.setItem('dsh-pet:settings:v1', JSON.stringify({ character: 'lulu', size: 200 }))
+  localStorage.setItem('dsh-pet:settings:v1', JSON.stringify({ character: 'pilot', size: 200 }))
   const { get } = loadSources(['store.js'], { localStorage })
   const instance = get('petCreateStore')()
-  assert.equal(instance.getSettings().character, 'pilot', '停在老默认上的用户跟随新默认')
+  assert.equal(instance.getSettings().character, 'lulu', '11-05 ~ 11-13 的 pilot 归并到唯一的内置形象')
   assert.equal(instance.getSettings().size, 200, '其它设置不能被迁移冲掉')
 
-  // 用户之后再手动选回经典 lulu，刷新也不能被迁移覆盖
-  instance.patchSettings({ character: 'lulu' })
+  // 迁移只做一次：用户后续改过（哪怕是改回历史 id）也不能被覆盖
+  instance.patchSettings({ character: 'pilot' })
   const again = get('petCreateStore')()
-  assert.equal(again.getSettings().character, 'lulu', '迁移只做一次，尊重用户后续选择')
+  assert.equal(again.getSettings().character, 'pilot', '迁移只做一次，尊重用户后续写入')
 })
 
 test('store：默认值、持久化、等级数学、跨天连续天数', async () => {
@@ -338,7 +317,7 @@ test('store：默认值、持久化、等级数学、跨天连续天数', async 
   const { get } = loadSources(['store.js'], { localStorage })
   const instance = get('petCreateStore')()
 
-  assert.equal(instance.getSettings().character, 'pilot', '默认形象是图生视频版噜噜')
+  assert.equal(instance.getSettings().character, 'lulu', '内置形象只有一只噜噜')
   assert.equal(instance.getSettings().enabled, true)
   assert.equal(instance.getSettings().volume, 0.45, '默认音量（旧版 0.3 被用户反馈"太小声"后调高）')
 
@@ -450,8 +429,8 @@ test('位图噜噜：Codex 协议、独立素材、16 向注视', () => {
   // 注意：vm 里造出来的数组是另一个 realm 的 Array，deepStrictEqual 会因原型不同而误判
   assert.equal(
     JSON.stringify(sprites.map((character) => character.id).sort()),
-    JSON.stringify(['lulu', 'pilot']),
-    '噜噜 + 图生视频试点 pilot',
+    JSON.stringify(['lulu']),
+    '内置只用一只位图噜噜',
   )
   assert.equal(new Set(sprites.map((character) => character.sprite.url)).size, sprites.length, '每只宠物必须有自己的素材占位符')
 
@@ -474,7 +453,7 @@ test('位图噜噜：Codex 协议、独立素材、16 向注视', () => {
   }
 
   // 11 行图集（噜噜）才有第 9–10 行注视帧
-  const gazeIds = ['lulu', 'pilot']
+  const gazeIds = ['lulu']
   for (const id of gazeIds) assert.ok(sprites.find((pet) => pet.id === id).sprite.gaze, `${id} 应带 16 向注视`)
   for (const pet of sprites.filter((entry) => !gazeIds.includes(entry.id))) {
     assert.equal(pet.sprite.gaze, undefined, `${pet.id} 的图集只有 9 行，不该挂注视`)
