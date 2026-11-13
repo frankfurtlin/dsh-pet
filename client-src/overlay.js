@@ -1370,6 +1370,13 @@ function petCreateOverlay(deps) {
   /* ── 设置应用 ───────────────────────────────────────────────────────── */
 
   let renderedCharacter = null
+  /**
+   * 当前挂在 figure 里的角色本体节点（本体 / 胶片条 / 动作视频 / 常驻 idle 视频…）。
+   * 换形象时按「上一次真正插进来的节点」整体替换，而不是每次按 class 名单重新收集：
+   * 名单每加一层新素材就会漏一次（`.dsh-pet-video` 漏过一次，`.dsh-pet-idle` 又漏过一次），
+   * 漏掉的那层留在 DOM 里和新的叠着显示，就是用户报的「后面还站着一只噜噜」。
+   */
+  let renderedBodyNodes = []
 
   const applySettings = () => {
     const settings = store.getSettings()
@@ -1381,9 +1388,6 @@ function petCreateOverlay(deps) {
     // 关掉「工具级状态」后：不参与状态仲裁、不弹工具/回合气泡，活动流连接照旧（设置页要看在线状态）
     root.setAttribute('data-feed', settings.liveFeed === false ? 'off' : 'on')
     if (renderedCharacter !== settings.character) {
-      const previousNodes = figure.querySelectorAll(
-        '.dsh-pet-svg, .dsh-pet-sprite, .dsh-pet-clip, .dsh-pet-video, .dsh-pet-image, .dsh-pet-anim',
-      )
       // 换角色时先摘原生动作层：旧节点一删，setClip/setVideoAction 就找不到 layer 了，
       // data-clip-active 会留在 root 上把新角色一起隐藏。
       clearNative()
@@ -1399,15 +1403,13 @@ function petCreateOverlay(deps) {
             ? petImageMarkup(settings.character)
             : petSvg(settings.character)
       const holder = petEl('div', { html: markup })
-      // 位图角色一次挂两个兄弟节点（本体 + 原生动作胶片条），不能只取 firstElementChild
+      // 位图角色一次挂多个兄弟节点（本体 + 胶片条 + 动作视频 + idle 视频），不能只取 firstElementChild。
+      // 插在上一批本体节点原来的位置（保持它在装扮层/道具层之前），再整体删旧批。
       const nodes = [...holder.children]
-      if (previousNodes.length) {
-        const anchor = previousNodes[0]
-        for (const node of nodes) figure.insertBefore(node, anchor)
-        previousNodes.forEach((node) => node.remove())
-      } else {
-        for (const node of nodes) figure.insertBefore(node, propLayer)
-      }
+      const anchor = renderedBodyNodes[0]?.parentNode === figure ? renderedBodyNodes[0] : propLayer
+      for (const node of nodes) figure.insertBefore(node, anchor)
+      for (const node of renderedBodyNodes) node.remove()
+      renderedBodyNodes = nodes
       renderedCharacter = settings.character
       root.setAttribute('data-render', isSprite ? 'sprite' : isAnim ? 'anim' : isImage ? 'image' : 'vector')
       root.removeAttribute('data-image-tilt')

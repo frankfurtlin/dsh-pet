@@ -1255,6 +1255,48 @@ async function main() {
     JSON.stringify({ layers: pilotIdle.idleLayers, display: pilotIdle.idleDisplay, src: pilotIdle.idleSrc, paused: pilotIdle.idlePaused, dur: pilotIdle.idleDuration, sprite: pilotIdle.spriteVisibility }),
   )
 
+  // 回归：在设置页里来回切形象（不刷新页面）。旧实现换角色时没删掉上一只的
+  // .dsh-pet-idle 视频节点，pilot → 经典 lulu → pilot 之后会剩两个 <video>
+  // 同时可见（冻结在旧时间点的那个盖在新视频上），看起来就是「后面还站着一只噜噜」。
+  const switchCharLive = async (id) => {
+    await page.locator('[data-dsh-pet] .dsh-pet-figure').first().click({ button: 'right' })
+    await page.waitForTimeout(200)
+    await page.locator('[data-dsh-pet] .dsh-pet-menu-item', { hasText: /宠物设置|Pet settings/ }).first().click()
+    await page.waitForTimeout(350)
+    await page.locator(`.dsh-pet-popover [data-testid="pet-characters"] [data-char="${id}"]`).first().click()
+    await page.waitForTimeout(300)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+  }
+  await switchCharLive('lulu')
+  await switchCharLive('pilot')
+  await switchCharLive('lulu')
+  await switchCharLive('pilot')
+  await page.waitForTimeout(1200)
+  const afterLiveSwitch = await page.evaluate(() => {
+    const root = document.querySelector('[data-dsh-pet]')
+    const bodies = [...root.querySelectorAll('.dsh-pet-sprite, .dsh-pet-idle, .dsh-pet-video, .dsh-pet-clip')].filter((node) => {
+      const style = getComputedStyle(node)
+      return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0
+    })
+    return {
+      char: root.getAttribute('data-char'),
+      idleLayers: root.querySelectorAll('.dsh-pet-idle').length,
+      sprites: root.querySelectorAll('.dsh-pet-sprite').length,
+      visible: bodies.map((node) => node.className),
+      idlePaused: root.querySelector('.dsh-pet-idle')?.paused ?? null,
+    }
+  })
+  check(
+    WIDTHS[0].width,
+    '设置页里来回切形象不会留下旧图层（不会出现「两只噜噜」）',
+    afterLiveSwitch.char === 'pilot'
+      && afterLiveSwitch.idleLayers === 1
+      && afterLiveSwitch.sprites === 1
+      && afterLiveSwitch.visible.length === 1,
+    JSON.stringify(afterLiveSwitch),
+  )
+
   const pilotCheer = await playNativeAction('cheer')
   check(
     WIDTHS[0].width,
