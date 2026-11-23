@@ -1,4 +1,44 @@
-# dsh-pet
+<div align="center">
+
+# dsh-pet 「桌面宠物」
+
+**一只住在 DSH 右下角的水豚噜噜：跟着会话状态换动作、能摸头能养、不挡你干活。**
+
+A capybara desktop pet that reacts to what your DSH sessions are doing.
+
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](package.json)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Platform](https://img.shields.io/badge/DSH-DeepSeek%20Harness-5b5ef7)](https://github.com/frankfurtlin/dsh-pocket)
+
+[中文](README.md) · [English](README.en.md)
+
+</div>
+
+![噜噜在 DSH 右下角](docs/screenshots/hero.png)
+
+## 这是什么
+
+dsh-pet 是 DSH Web 界面的桌宠插件：右下角常驻一只位图水豚噜噜，跟着会话状态（运行、待审批、完成、番茄钟、睡觉）换动作和表情，能摸头、喂食、换装扮、养亲密度。素材由 host 半按需直供，客户端 bundle 只有约 213 KB。
+
+## 功能
+
+- **跟着状态动**：待审批 / 运行中 / 完成 / 番茄钟 / 睡觉 / 待机六种状态，优先级写成一张表，加新状态只改表。
+- **原生动作**：3.75 秒透明 idle 视频 + 12 个动作透明 WebM，配台词气泡、合成音效与粒子特效。
+- **活动流与提醒**：工具级状态气泡、审批时闪标签页标题、回合汇报、上下文 70% / 88% 预警。
+- **养与记**：亲密度分级、任务与专注计数、连续天数、每日日记落盘 `~/.dsh/pet-diary/`。
+- **装扮与交互**：9 件 SVG 装扮、四档大小、拖拽落位与贴边吸附、16 向注视、右键动作点播。
+- **请宠物说话**：host 注册 `pet_say` 工具，agent 可主动让它说一句话。
+- **自备形象**：静态图 / 动图流水线，或导入 Codex 协议图集。
+- **中英双语、移动端可关**。
+
+## 安装
+
+```bash
+dsh plugin --profile web add /root/workspace/plugins/dsh-pet
+```
+
+## 详细文档
+
 
 DSH（DeepSeek Harness）Web 界面的桌宠插件：一只住在右下角、会跟着你的会话状态动的小宠物。内置形象是**水豚噜噜**：闲时播 3.75s 循环透明 idle 视频，12 个专属动作全是透明 WebM（整只换姿势，不是拿 SVG 零件往身上拼），位图图集负责拖拽、16 向注视与状态切换。`client.js` 只有 **213 KB**：图集、12 条动作视频、常驻 idle 视频和回退胶片条都改由 host 半的 `/pet/assets/` 白名单路由按需直供（带 ETag / 304）。支持把**你自己的图片**变成形象（见「自备形象」）。
 
@@ -199,7 +239,7 @@ python3 scripts/video-to-clip.py --in /root/.hermes/cache/scratch/act/cheer.mp4 
 
 2026-11-05 已按这条路线迁完：`client.js` 从 3,662.9KB（内联）降到 **213 KB**（只留 URL，`<video preload="none">` 动作触发才拉），渲染层一行没动，只改了 `scripts/build.mjs` 与 host 半。
 
-**常驻 idle 视频**：`images/pilot/idle3.mp4`（960×960 / 16fps / 81 帧）扫循环段取**第 5–64 帧 = 60 帧 @16fps = 3.75s（首尾差 1.31）**，经 `video-to-webm.py` 转成 `assets/idle-loop.webm`（116 KB，384×416，alpha 覆盖 0.545，角色高 396 / 基线 406，和动作视频同一套画布协议）。`characters.js` 里 `petIdleVideo()` 给内置位图形象返回这一条（原先按形象登记的 `PET_IDLE_VIDEOS` 表已删），`overlay.js` 的 `syncIdleVideo()` 在闲时给 `.dsh-pet-idle` 挂 `data-idle-video`、按 state 设 `playbackRate`（睡觉 0.55 倍速），动作 / 注视 / 拖拽 / 关动效 / `prefers-reduced-motion` 时一律让位给图集渲染（否则会和动作视频叠着播）。视频不可用（解码失败 / 关动效）时落回图集第 0 行那 6 帧手绘 idle。
+**常驻 idle 视频**：`images/lulu-idle-src/idle3.mp4`（960×960 / 16fps / 81 帧）扫循环段取**第 5–64 帧 = 60 帧 @16fps = 3.75s（首尾差 1.31）**，经 `video-to-webm.py` 转成 `assets/idle-loop.webm`（116 KB，384×416，alpha 覆盖 0.545，角色高 396 / 基线 406，和动作视频同一套画布协议）。`characters.js` 里 `petIdleVideo()` 给内置位图形象返回这一条（原先按形象登记的 `PET_IDLE_VIDEOS` 表已删），`overlay.js` 的 `syncIdleVideo()` 在闲时给 `.dsh-pet-idle` 挂 `data-idle-video`、按 state 设 `playbackRate`（睡觉 0.55 倍速），动作 / 注视 / 拖拽 / 关动效 / `prefers-reduced-motion` 时一律让位给图集渲染（否则会和动作视频叠着播）。视频不可用（解码失败 / 关动效）时落回图集第 0 行那 6 帧手绘 idle。
 
 ## 素材来源与许可
 
@@ -208,9 +248,11 @@ python3 scripts/video-to-clip.py --in /root/.hermes/cache/scratch/act/cheer.mp4 
 | 形象 | 上游 | 许可 |
 | --- | --- | --- |
 | 噜噜 | [czy666chen/lulu](https://github.com/czy666chen/lulu)（图集）、[srwang0506/HatchPet-CapybaraLulu](https://github.com/srwang0506/HatchPet-CapybaraLulu)（源帧/构建脚本） | MIT / Apache-2.0 |
-| 噜噜 idle 行 + 常驻 idle 视频 | 以噜噜图集第 0 行 idle 为参考图，用 `Wan-AI/Wan2.2-I2V-A14B` 图生视频（`images/pilot/idle3.mp4`），抽 60 帧循环段转 `assets/idle-loop.webm`，并回填图集 idle 行 | 同上游（派生自 MIT/Apache-2.0 素材），本机自用 |
+| 噜噜 idle 行 + 常驻 idle 视频 | 以噜噜图集第 0 行 idle 为参考图，用 `Wan-AI/Wan2.2-I2V-A14B` 图生视频（`images/lulu-idle-src/idle3.mp4`），抽 60 帧循环段转 `assets/idle-loop.webm`，并回填图集 idle 行 | 同上游（派生自 MIT/Apache-2.0 素材），本机自用 |
 | 12 条动作视频 `anim-*` | `MiniMax-Video-H3-Max`（腾讯云 TokenHub，480P/5s 图生视频，绿幕首帧）→ `scripts/video-to-webm.py` 转透明 WebM；每条按动作时长掐循环段（cheer 43–86 帧 / 44 帧 @24fps，其余见 `PET_ACTION_VIDEOS` 的 seconds） | 同上，本机自用 |
 | 鼓掌胶片条 `clip-cheer` | 同一段视频，`scripts/video-to-clip.py` 切成胶片条（视频解码失败时的回退） | 同上，本机自用 |
+| 动图素材库 `images/lulu-anims` | 抖音图文作品（作者「碎个好觉」等）的循环短视频，`scripts/fetch-douyin.py` 抓流 → 480² 动图 + 原片；**只在本机自用，不进 bundle、不随插件分发** | 粉丝二创，未获授权，仅本地使用 |
+| 静图与壁纸 `images/lulu-stills` | 抖音图文作品原图（作者 ✨曜✨）、小红书壁纸笔记，原图归档；**只在本机自用，不进 bundle** | 粉丝二创，未获授权，仅本地使用 |
 
 （此前曾接入的布布 / 团团 / 像素鸭 / 咕咚 / 薄荷已移除，素材保留在 `/root/backups/dsh-pet-assets-removed-20261102/`，各自许可：MIT / MIT / MIT / CC BY 4.0 署名 `咕咚 by Rank` / MIT 署名 `Minty by Somnusochi`。）
 
@@ -314,11 +356,18 @@ scripts/video-to-webm.py   绿幕动作视频 → 透明 WebM assets/anim-*.webm
 scripts/video-to-clip.py   绿幕动作视频 → 横向胶片条 assets/clip-*.webp（回退）
 scripts/gen-scene.py       真实照片级场景合成（rembg + Pollinations + 影调匹配，实验）
 scripts/gen-edit.py        图生图换场景（硅基流动 Qwen-Image-Edit，实验）
+scripts/fetch-douyin.py    抖音图文/幻灯片作品 → 循环动图素材（真实 Chromium 抓流 → 480² webp + 原片 + preview.html，自动更新 images/lulu-anims/index.json）
+scripts/anim_preview.py    动图组的 preview.html 生成器（抓取脚本与手工补历史组共用，模板只此一份）
+scripts/build-anim-index.py 动图库索引重建（扫各组 manifest → index.json + README 库存表）
 test/pet.test.mjs      单元测试（23 个用例：bundle 形状 / 图集协议 / 流水线 / 动作库 / 素材 URL）
 test/assets.test.mjs   素材路由纯逻辑测试（5 个用例：白名单 / 穿越 / ETag / 体积闸门）
 test/host.test.mjs     host 侧单元测试（16 个用例）
 docs/verification/pet/ 验收报告与截图
-images/                素材工作区（生成/收集的原始图片视频，不进 bundle，勿删）
+images/                素材工作区（不进 bundle、勿删）：index.json 是总览，四类各有目录
+images/lulu-anims/     动图库：一组作品一个目录（NN.webp + src/NN.mp4 + manifest.json + preview.html），见该目录 README
+images/lulu-stills/    静图：抖音图文原图、小红书壁纸（一组一目录 + manifest.json）
+images/lulu-generated/ 生成实验：scenes/（抠图换背景）、i2i/（图生图换场景），未接入代码
+images/lulu-idle-src/  常驻 idle 视频的源头素材（idle3.mp4 → assets/idle-loop.webm）
 ```
 
 ## 几个设计取舍
@@ -372,7 +421,7 @@ python3 scripts/video-to-webm.py --video /tmp/maxtube/out/cheer.mp4 --action che
 - **用户自定义图片形象**：已支持（`scripts/import-lulu.py` + `kind: 'image'` 分支，见「自备形象」）；静态画只有呼吸/倾斜跟随，没有逐帧动作；内置位图形象已经有通用分支：在 `client-src/characters.js` 的 `PET_CHARACTERS` 里加一项 `{ kind: 'sprite', sprite: { url: '__DSH_PET_ASSET_<NAME>__', frameW, frameH, cols, rows, actions, states } }`，把图集放到 `assets/<name>.webp`，构建会替换成 `/pet/assets/<name>.webp` 并校验体积。位图噜噜已经接了第 9–10 行的 16 向注视帧；以后再收位图形象若要注视，加 `sprite.gaze = { rows: [9, 10], count: 16, originDeg: -90, stepDeg: 22.5, deadZonePx: 28 }` 即可。
 - 动作主体仍是**程序化表演**（CSS 关键帧 + DOM 粒子），12 个动作另外接了一条原生透明 WebM（`assets/anim-*.webm`，宿主 `/pet/assets` 直供，bundle 里只留 URL）；播不了时按「视频 → 胶片条 → SVG 表演」三级回退。所以动作数比 `dsh-whale-pet` 的 95 个少，也因此没有素材体积和授权问题。加新动作视频：`scripts/video-to-webm.py` 转好放进 `assets/`，在 `client-src/characters.js` 的 `PET_ACTION_VIDEOS` 登记 `{ url, seconds }`，`npm run build` 会校验体积并替换成 URL（host 路由只认白名单名，改路由本身要重启 DSH）。想加动作：在 `client-src/actions.js` 的 `PET_ACTIONS` 里加一项 + 在 `styles/pet.css` 写对应 `@keyframes dsh-pet-act-<effect>` 与 `[data-act='<effect>']` 规则，单测会检查两者是否都写了。
 - **生成素材的一致性还不够**：图生视频会轻微改比例（头偏大）、抹掉小细节（南瓜帽的柄变平顶），`hop` 的片段甚至整段出画，所以只接了鼓掌一个动作。要全面替换成「专属动作」，得先解决生成侧的镜头/比例锁定（或改用逐帧重绘、把动作重定向到原图集比例），并且需要重新拿到视频生成额度 —— 剩下 10 个动作提交时全部返回 `HTTP 402 Payment Required`。
-- `assets/clip-hop.webp` 曾是**被拒的草稿**（头/脚出画、全程头肩特写，实际页面效果见 `docs/verification/pet/pet-hop-rejected-page.png`），2026-11-13 整理时已从仓库删除；hop 现在走透明视频。`images/generated/` 与 `images/generated-i2i/`（换背景/换场景实验）也没有接入任何代码路径。
+- `assets/clip-hop.webp` 曾是**被拒的草稿**（头/脚出画、全程头肩特写，实际页面效果见 `docs/verification/pet/pet-hop-rejected-page.png`），2026-11-13 整理时已从仓库删除；hop 现在走透明视频。`images/lulu-generated/` 下的 `scenes/` 与 `i2i/`（换背景/换场景实验）也没有接入任何代码路径。
 - 宠物只有一套「行为人格」，没有多套语音/性格包。
 - 没有余额/用量展示（按需求只要纯宠物功能，不做钱包）。
 - 音效是合成音，不是打包的音频文件；想要更丰富需要引入素材与授权。

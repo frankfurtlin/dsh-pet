@@ -15,3 +15,7 @@ __pycache__/
 
 # 素材工作区（62MB：抖音实况图 / 绿幕源视频 / 生成的场景图），不进仓库
 images/
+
+# README 用的界面截图要在 GitHub 上能显示
+!docs/screenshots/
+!docs/screenshots/**
