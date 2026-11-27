@@ -11,10 +11,10 @@ gen-edit.py —— 用图生图（Qwen-Image-Edit-2509 @ 硅基流动）给噜�
   Pillow + opencv（去水印用 cv2.inpaint）
 
 用法（必须用系统 python3，里面有 cv2）：
-  /usr/bin/python3 scripts/gen-edit.py --ref images/lulu-2/01.jpg --preset cafe
-  /usr/bin/python3 scripts/gen-edit.py --ref images/lulu-2/12.jpg \
-      --prompt "背景换成海边落日，角色保持不变，手里多一个冰淇淋" --out images/generated-i2i/beach.png
-  /usr/bin/python3 scripts/gen-edit.py --ref images/lulu-2/01.jpg --preset snow --keep-watermark
+  /usr/bin/python3 scripts/gen-edit.py --ref images/lulu-anims/douyin-live-7703543793374999547/01.jpg --preset cafe
+  /usr/bin/python3 scripts/gen-edit.py --ref images/lulu-anims/douyin-live-7703543793374999547/12.jpg \
+      --prompt "背景换成海边落日，角色保持不变，手里多一个冰淇淋" --out images/lulu-generated/i2i/beach.png
+  /usr/bin/python3 scripts/gen-edit.py --ref images/lulu-anims/douyin-live-7703543793374999547/01.jpg --preset snow --keep-watermark
 
 预设：cafe / snow / sakura / party / garden / night
 说明：
@@ -135,7 +135,7 @@ def main() -> None:
     raw.parent.mkdir(parents=True, exist_ok=True)
     urllib.request.urlretrieve(raw_url, raw)
 
-    out = pathlib.Path(a.out) if a.out else pathlib.Path("images/generated-i2i") / f"{tag}-{ref.stem}.png"
+    out = pathlib.Path(a.out) if a.out else pathlib.Path("images/lulu-generated/i2i") / f"{tag}-{ref.stem}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
 
     print("3/3 后处理 …")

@@ -14,9 +14,9 @@ gen-scene.py —— 把已有的噜噜图抠出来，换到 AI 生成的场景�
   联网（Pollinations 免费额度：约 1 张 / 45 秒 / IP）
 
 用法：
-  python3 scripts/gen-scene.py --cut images/lulu-2/01.jpg --scene bedroom
-  python3 scripts/gen-scene.py --cut images/lulu-2/12.jpg \
-      --prompt "cozy cafe interior, soft 3d render, pastel, no characters" --out images/generated/cafe.jpg
+  python3 scripts/gen-scene.py --cut images/lulu-anims/douyin-live-7703543793374999547/01.jpg --scene bedroom
+  python3 scripts/gen-scene.py --cut images/lulu-anims/douyin-live-7703543793374999547/12.jpg \
+      --prompt "cozy cafe interior, soft 3d render, pastel, no characters" --out images/lulu-generated/scenes/cafe.jpg
 
 注意：脚本本体用系统 python3 跑不通 rembg，抠图那一步会自动调用
       /root/.venvs/rembg/bin/python；如果该 venv 不存在，会提示先安装。
@@ -140,7 +140,7 @@ def main() -> None:
     ap.add_argument("--cut", required=True, help="角色原图（会先抠图）")
     ap.add_argument("--scene", choices=sorted(SCENES), help="预设场景")
     ap.add_argument("--prompt", help="自定义背景提示词（与 --scene 二选一）")
-    ap.add_argument("--out", help="输出路径，默认 images/generated/<scene>-<cut>.jpg")
+    ap.add_argument("--out", help="输出路径，默认 images/lulu-generated/scenes/<scene>-<cut>.jpg")
     ap.add_argument("--ratio", type=float, default=0.5, help="角色高度占画面比例（默认 0.5）")
     ap.add_argument("--seed", type=int, default=101)
     a = ap.parse_args()
@@ -160,7 +160,7 @@ def main() -> None:
     gen_bg(prompt, bg_jpg, seed=a.seed)
     print("3/3 合成 …")
 
-    out = pathlib.Path(a.out) if a.out else pathlib.Path("images/generated") / f"{tag}-{src.stem}.jpg"
+    out = pathlib.Path(a.out) if a.out else pathlib.Path("images/lulu-generated/scenes") / f"{tag}-{src.stem}.jpg"
     compose(bg_jpg, cut_png, out, ratio=a.ratio)
     print("完成：", out)
 

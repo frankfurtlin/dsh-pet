@@ -611,7 +611,7 @@ function petActionVideo(characterId, actionId) {
  * 常驻 idle 视频：3.75s 透明 WebM 循环（assets/idle-loop.webm）。
  *
  * 图集 idle 只有 6 帧、靠 CSS steps 换帧，看久了像定格；这条是真实建模噜噜的连续
- * 呼吸/眨眼（images/pilot/idle3.mp4 里 60 帧循环段，首尾差 1.31）。画布与动作视频同一套，
+ * 呼吸/眨眼（images/lulu-idle-src/idle3.mp4 里 60 帧循环段，首尾差 1.31）。画布与动作视频同一套，
  * 闲时切到动作不跳位置；关动效 / 注视 / 拖拽时让位回图集帧。
  */
 const IDLE_VIDEO = { url: '/pet/assets/idle-loop.webm', seconds: 3.75 }
