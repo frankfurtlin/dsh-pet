@@ -20,6 +20,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -46,9 +47,8 @@ const WIDTHS = (option('widths') ?? '1440x900,390x844').split(',').map((pair) =>
 function loadPlaywright() {
   const candidates = [
     process.env.PLAYWRIGHT_PATH,
-    '/root/workspace/hermes-site/tools/node_modules/playwright',
-    '/root/workspace/story-between/client/node_modules/playwright',
-    '/root/.npm/_npx/b48a3ddefa030334/node_modules/playwright',
+    join(homedir(), 'workspace/hermes-site/tools/node_modules/playwright'),
+    join(homedir(), 'workspace/story-between/client/node_modules/playwright'),
   ].filter(Boolean)
   for (const candidate of candidates) {
     if (!existsSync(candidate)) continue
@@ -58,7 +58,12 @@ function loadPlaywright() {
       /* 换下一个候选 */
     }
   }
-  throw new Error(`找不到 playwright，可设置 PLAYWRIGHT_PATH=<node_modules/playwright 目录>；已尝试：\n${candidates.join('\n')}`)
+  // 本仓库 / 上层 node_modules 里装了 playwright 时，退回模块自带解析
+  try {
+    return createRequire(import.meta.url)('playwright')
+  } catch {
+    throw new Error(`找不到 playwright，可设置 PLAYWRIGHT_PATH=<node_modules/playwright 目录>；已尝试：\n${candidates.join('\n')}`)
+  }
 }
 
 /**

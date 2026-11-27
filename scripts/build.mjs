@@ -23,6 +23,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -65,10 +66,13 @@ function findThemeBundle() {
   const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
   const candidates = []
   if (process.env.DSH_UI_THEME_BUNDLE) candidates.push(process.env.DSH_UI_THEME_BUNDLE)
-  for (const entry of config.themeBundleCandidates ?? []) candidates.push(entry.replace('~', process.env.HOME ?? '/root'))
+  for (const entry of config.themeBundleCandidates ?? []) candidates.push(entry.replace('~', homedir()))
   for (const candidate of candidates) if (candidate && existsSync(candidate)) return candidate
-  // 兜底：全局安装目录里按已知相对路径找
-  const globalRoot = '/root/.nvm/versions/node/v24.21.0/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/lib/client.js'
+  // 兜底：按当前 node 的安装前缀（nvm 等）推全局安装目录，不写死版本号与本机绝对路径
+  const globalRoot = join(
+    process.execPath,
+    '../../lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-client-ui-theme/lib/client.js',
+  )
   return existsSync(globalRoot) ? globalRoot : null
 }
 

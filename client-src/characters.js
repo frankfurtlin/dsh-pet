@@ -160,7 +160,7 @@ const PET_CHARACTERS = [
 /**
  * 用户自备形象（可选）：`generated-images.js` 里的 PET_USER_IMAGES。
  *
- * 素材来自 /root/workspace/plugins/dsh-pet/images/，经 scripts/import-lulu.py 抠底、裁边、
+ * 素材来自 /opt/dsh/dsh-pet/images/，经 scripts/import-lulu.py 抠底、裁边、
  * 缩到 320px 后以 data URI 内联（插件仍是单文件部署，不加 host 静态路由）。
  * 这类形象是**静态画**：不假装有 9 组动作，只做呼吸起伏 + 轻微视线跟随，
  * 所以单独走 `kind: 'image'` 分支，和矢量/位图并列。

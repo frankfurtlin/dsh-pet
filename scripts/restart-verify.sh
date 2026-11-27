@@ -1,13 +1,15 @@
 #!/bin/sh
 # 脱离 dsh 自身进程树重启 DSH，重启后自检并跑 dsh-pet 浏览器验收。
 # 用法：systemd-run --on-active=30 --unit=dsh-restart-<ts> --collect \
-#          --property=TimeoutStartSec=1200 /bin/sh /root/workspace/plugins/dsh-pet/scripts/restart-verify.sh
-# 结果写 /root/workspace/plugins/dsh-pet/state/restart-<ts>.{log,md}
+#          --property=TimeoutStartSec=1200 /bin/sh /opt/dsh/dsh-pet/scripts/restart-verify.sh
+# 结果写 /opt/dsh/dsh-pet/state/restart-<ts>.{log,md}
 set -u
 
-PET_DIR=/root/workspace/plugins/dsh-pet
+# 仓库根按脚本位置推导；家目录与 dsh-ext 也不写死（本机工具，可用 DSH_EXT 覆盖）。
+PET_DIR=$(cd "$(dirname "$0")/.." && pwd)
 STATE_DIR=$PET_DIR/state
-DSH_EXT=/root/.local/bin/dsh-ext
+HOME_DIR=${HOME:-$(cd ~ && pwd)}
+DSH_EXT=${DSH_EXT:-$HOME_DIR/.local/bin/dsh-ext}
 UNIT=deepseek-harness.service
 TS=$(date +%Y%m%d-%H%M%S)
 LOG=$STATE_DIR/restart-$TS.log

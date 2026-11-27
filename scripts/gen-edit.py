@@ -6,7 +6,7 @@ gen-edit.py —— 用图生图（Qwen-Image-Edit-2509 @ 硅基流动）给噜�
 外形/配色/比例能保住，只改背景和动作。实测单张 ~25-30 秒。
 
 依赖：
-  SiliconFlow key：默认从 /root/.dsh/.credentials.yaml 的 SILICONFLOW_API_KEY 读，
+  SiliconFlow key：默认从 ~/.dsh/.credentials.yaml 的 SILICONFLOW_API_KEY 读，
                  也可以用环境变量 SF_API_KEY 覆盖
   Pillow + opencv（去水印用 cv2.inpaint）
 
@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -38,8 +39,15 @@ import numpy as np
 
 ENDPOINT = "https://api.siliconflow.cn/v1/images/generations"
 MODEL = "Qwen/Qwen-Image-Edit-2509"
-CRED = pathlib.Path("/root/.dsh/.credentials.yaml")
-COS_SCRIPT = "/root/.hermes/skills/devops/tencent-cos-ops/scripts/cos_res.py"
+
+# 本机路径一律运行时推导，可用 DSH_HOME / HERMES_HOME / PET_COS_SCRIPT 覆盖。
+DSH_HOME = pathlib.Path(os.environ.get("DSH_HOME") or pathlib.Path.home() / ".dsh")
+HERMES_HOME = pathlib.Path(os.environ.get("HERMES_HOME") or pathlib.Path.home() / ".hermes")
+CRED = DSH_HOME / ".credentials.yaml"
+COS_SCRIPT = pathlib.Path(
+    os.environ.get("PET_COS_SCRIPT")
+    or HERMES_HOME / "skills" / "devops" / "tencent-cos-ops" / "scripts" / "cos_res.py"
+)
 
 BASE_RULE = "保持这只卡通水豚的外形、配色、比例和质感完全不变，只改动场景与动作"
 
@@ -61,7 +69,6 @@ def api_key() -> str:
         key = m.group(1) if m else ""
     except FileNotFoundError:
         pass
-    import os
     return os.environ.get("SF_API_KEY") or key
 
 
@@ -119,7 +126,7 @@ def main() -> None:
 
     key = api_key()
     if not key:
-        sys.exit("没找到 SILICONFLOW_API_KEY（/root/.dsh/.credentials.yaml 或 SF_API_KEY）")
+        sys.exit("没找到 SILICONFLOW_API_KEY（~/.dsh/.credentials.yaml 或 SF_API_KEY）")
 
     ref = pathlib.Path(a.ref)
     print("1/3 准备参考图 …")
@@ -131,7 +138,7 @@ def main() -> None:
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     tag = a.preset or "custom"
-    raw = pathlib.Path("/root/.hermes/cache/scratch") / f"i2i_{tag}_{stamp}_raw.png"
+    raw = HERMES_HOME / "cache" / "scratch" / f"i2i_{tag}_{stamp}_raw.png"
     raw.parent.mkdir(parents=True, exist_ok=True)
     urllib.request.urlretrieve(raw_url, raw)
 

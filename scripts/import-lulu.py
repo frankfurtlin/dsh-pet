@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""把 /root/workspace/plugins/dsh-pet/images/ 里的噜噜图片转成插件可用的形象素材。
+"""把 /opt/dsh/dsh-pet/images/ 里的噜噜图片转成插件可用的形象素材。
 
 做四件事：
 1. 抠底（纯白/纯色背景变透明，复杂背景保留并标记 cutout=false）
@@ -117,7 +117,7 @@ def contact_sheet(entries: list[dict], out: Path) -> None:
 def main() -> int:
     targets = Path(__file__).resolve().parent.parent
     ap = argparse.ArgumentParser()
-    ap.add_argument("--in", dest="src", default="/root/workspace/plugins/dsh-pet/images")
+    ap.add_argument("--in", dest="src", default=str(targets / "images"))
     ap.add_argument("--out", dest="dst", default=str(targets / "assets/user"))
     ap.add_argument("--emit", default=str(targets / "client-src/generated-images.js"))
     ap.add_argument("--sheet", default="")
@@ -182,7 +182,7 @@ def main() -> int:
     # 生成客户端数据模块：data URI 内联，保持插件单文件部署
     lines = [
         "// 由 scripts/import-lulu.py 生成，不要手改。",
-        "// 素材来源：你在 /root/workspace/plugins/dsh-pet/images/ 放进来的图片（仅本地个人使用）。",
+        "// 素材来源：你在 /opt/dsh/dsh-pet/images/ 放进来的图片（仅本地个人使用）。",
         "const PET_USER_IMAGES = [",
     ]
     for e in entries:

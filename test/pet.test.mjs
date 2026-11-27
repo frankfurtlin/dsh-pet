@@ -888,7 +888,7 @@ test('装扮：id 唯一、标记有 class、切换闭环、默认戴围巾', ()
 })
 
 /**
- * 自备形象流水线（scripts/import-lulu.py）：用户在 /root/workspace/plugins/dsh-pet/images/
+ * 自备形象流水线（scripts/import-lulu.py）：用户在 /opt/dsh/dsh-pet/images/
  * 放图之后，这一跑就该产出可用素材。这里用现成图集当输入，验证「能跑通 + 产物形状对」，
  * 不断言具体像素（那属于素材本身的事）。
  */

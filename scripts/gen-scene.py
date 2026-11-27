@@ -9,7 +9,7 @@ gen-scene.py —— 把已有的噜噜图抠出来，换到 AI 生成的场景�
 而这条管线里角色像素来自你自己的图，只有背景是 AI 生成的，所以角色 100% 一致。
 
 依赖：
-  /root/.venvs/rembg/bin/python（已装 rembg + onnxruntime，模型 u2net）
+  ~/.venvs/rembg/bin/python（已装 rembg + onnxruntime，模型 u2net）
   Pillow
   联网（Pollinations 免费额度：约 1 张 / 45 秒 / IP）
 
@@ -19,11 +19,12 @@ gen-scene.py —— 把已有的噜噜图抠出来，换到 AI 生成的场景�
       --prompt "cozy cafe interior, soft 3d render, pastel, no characters" --out images/lulu-generated/scenes/cafe.jpg
 
 注意：脚本本体用系统 python3 跑不通 rembg，抠图那一步会自动调用
-      /root/.venvs/rembg/bin/python；如果该 venv 不存在，会提示先安装。
+      ~/.venvs/rembg/bin/python；如果该 venv 不存在，会提示先安装。
 """
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import subprocess
 import sys
@@ -34,8 +35,10 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageStat
 # Pillow 10+ 把滤镜常量挪进 Image.Resampling，这里兼容新旧两版
 LANCZOS = getattr(Image, "Resampling", Image).LANCZOS
 
-REMbg_PY = pathlib.Path("/root/.venvs/rembg/bin/python")
-CACHE = pathlib.Path("/root/.hermes/cache/scratch/gen-scene-cache")
+# 本机路径一律运行时推导，可用 REMBG_PYTHON / HERMES_HOME 覆盖。
+REMbg_PY = pathlib.Path(os.environ.get("REMBG_PYTHON") or pathlib.Path.home() / ".venvs/rembg/bin/python")
+HERMES_HOME = pathlib.Path(os.environ.get("HERMES_HOME") or pathlib.Path.home() / ".hermes")
+CACHE = HERMES_HOME / "cache/scratch/gen-scene-cache"
 
 SCENES = {
     "bedroom": "cute cozy bedroom interior, soft 3d render style, blender, pastel colors, plush toys, warm lamp, empty room no characters, vertical",
@@ -51,7 +54,7 @@ def cutout(src: pathlib.Path, dst: pathlib.Path) -> pathlib.Path:
     if dst.exists():
         return dst
     if not REMbg_PY.exists():
-        sys.exit(f"缺少 rembg 环境：{REMbg_PY}（建法：python3 -m venv /root/.venvs/rembg && pip install rembg onnxruntime）")
+        sys.exit(f"缺少 rembg 环境：{REMbg_PY}（建法：python3 -m venv ~/.venvs/rembg && pip install rembg onnxruntime）")
     dst.parent.mkdir(parents=True, exist_ok=True)
     code = (
         "from rembg import remove, new_session\n"
