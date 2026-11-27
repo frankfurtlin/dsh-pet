@@ -29,8 +29,10 @@ Right-click her for the menu: pet, feed, focus, the twelve actions, sleep or wak
 
 ## Install
 
+The commands below assume the checkout is at `/opt/dsh/dsh-pet` — substitute your own path if it lives elsewhere.
+
 ```sh
-dsh plugin --profile web add /root/workspace/plugins/dsh-pet
+dsh plugin --profile web add /opt/dsh/dsh-pet
 ```
 
 Refresh the page; the pet appears in the bottom-right corner. Client code is a build artifact, so after editing `client-src/` run `npm run build` and refresh. Host-side changes (routes, asset protocol) need a DSH restart.

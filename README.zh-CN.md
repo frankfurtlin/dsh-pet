@@ -30,8 +30,10 @@ dsh-pet 是 DSH Web 界面的桌宠插件：右下角常驻一只位图水豚噜
 
 ## 安装
 
+下面的命令假设仓库检出在 `/opt/dsh/dsh-pet`，放在别处就替换成实际路径。
+
 ```bash
-dsh plugin --profile web add /root/workspace/plugins/dsh-pet
+dsh plugin --profile web add /opt/dsh/dsh-pet
 ```
 
 ## 详细文档
@@ -55,13 +57,13 @@ DSH（DeepSeek Harness）Web 界面的桌宠插件：一只住在右下角、会
 
 **历史**：2026-11-05 ~ 11-13 期间曾同时有两只内置形象（试验版 `pilot` 默认 + 经典 `lulu`），11-13 按用户要求合并成一只——保留 `pilot` 的图集与 idle 视频（素材原样改名为 `assets/lulu.webp`），删掉上游原版图集；老 localStorage 里的 `pilot` 由一次性迁移归到 `lulu`（标记 `dsh-pet:migrate:v2-single-lulu`，只迁一次，之后用户自己写入的值不再被覆盖）。
 
-其它形象（糯米猫 / 企鹅豆 / 小火狐 / 布布 / 团团 / 像素鸭 / 咕咚 / 薄荷）与矢量噜噜都已按用户要求移除：源码里的角色条目删掉，素材挪到 `/root/backups/dsh-pet-assets-removed-20261102/`。想再要回来，`assets/` 放回图集 + 在 `PET_CHARACTERS` 里加一条 `{ kind: 'sprite', sprite: petSpritePack(url, { rows: 9|11 }) }` 即可（`scripts/pack-sprite.mjs` 能直接生成条目）；设置页的「自定义图集」也能直接导入。
+其它形象（糯米猫 / 企鹅豆 / 小火狐 / 布布 / 团团 / 像素鸭 / 咕咚 / 薄荷）与矢量噜噜都已按用户要求移除：源码里的角色条目删掉，素材挪到 `~/backups/dsh-pet-assets-removed-20261102/`。想再要回来，`assets/` 放回图集 + 在 `PET_CHARACTERS` 里加一条 `{ kind: 'sprite', sprite: petSpritePack(url, { rows: 9|11 }) }` 即可（`scripts/pack-sprite.mjs` 能直接生成条目）；设置页的「自定义图集」也能直接导入。
 
 `size` 四档（小 76 / 中 104 / 大 136 / 超大 200）。
 
 **跟着你看**：闲着的时候宠物会盯着鼠标 —— 切图集第 9–10 行的 16 张注视帧（每 22.5° 一张）。指针进宠物 28px 内或静止 2.2 秒就收回，免得一直瞪着。
 
-位图角色「噜噜」的图集来自公开仓库 [czy666chen/lulu](https://github.com/czy666chen/lulu)（MIT）与 [srwang0506/HatchPet-CapybaraLulu](https://github.com/srwang0506/HatchPet-CapybaraLulu)（Apache-2.0，含全部源帧）：1536×2288、8 列 × 11 行、单格 **192×208**、RGBA。本地副本在 `/root/.dsh/codex-pet/pets/lulu-capybara-3/spritesheet.png`；现在**按原分辨率**压成 `assets/lulu.webp`（442 KB，WebP q82，alpha 保留），单格原生就是 192×208，200 px 档只需 0.96 倍缩，属于「原像素直出」，不再有降采样发虚。**2026-11-05 起素材走 host 直供**：`lib/assets.mjs` 只放行 `[a-z0-9][a-z0-9-]{0,63}.(webp|png|webm)` 白名单名、校验体积（≤768 KB）、回 `ETag` + `Cache-Control: no-cache`（`If-None-Match` 命中 304），路径穿越一律 400；构建只把 URL 拼进 `client.js`（213 KB），刷新页面就是最新素材。**代价是 host 半改动必须重启 DSH 才生效**（没有 HMR，插件也在 `apply()` 时才注册路由），加素材类型/换路由后记得重启。
+位图角色「噜噜」的图集来自公开仓库 [czy666chen/lulu](https://github.com/czy666chen/lulu)（MIT）与 [srwang0506/HatchPet-CapybaraLulu](https://github.com/srwang0506/HatchPet-CapybaraLulu)（Apache-2.0，含全部源帧）：1536×2288、8 列 × 11 行、单格 **192×208**、RGBA。本地副本在 `~/.dsh/codex-pet/pets/lulu-capybara-3/spritesheet.png`；现在**按原分辨率**压成 `assets/lulu.webp`（442 KB，WebP q82，alpha 保留），单格原生就是 192×208，200 px 档只需 0.96 倍缩，属于「原像素直出」，不再有降采样发虚。**2026-11-05 起素材走 host 直供**：`lib/assets.mjs` 只放行 `[a-z0-9][a-z0-9-]{0,63}.(webp|png|webm)` 白名单名、校验体积（≤768 KB）、回 `ETag` + `Cache-Control: no-cache`（`If-None-Match` 命中 304），路径穿越一律 400；构建只把 URL 拼进 `client.js`（213 KB），刷新页面就是最新素材。**代价是 host 半改动必须重启 DSH 才生效**（没有 HMR，插件也在 `apply()` 时才注册路由），加素材类型/换路由后记得重启。
 
 **状态**（数据源：浏览器侧 `ctx.uiSession.sessionStatus` + host 侧 `/pet/activity` 活动流；仲裁规则见下）：
 
@@ -158,7 +160,7 @@ DSH（DeepSeek Harness）Web 界面的桌宠插件：一只住在右下角、会
 
 ```bash
 # 1. 把图片放进收件箱（png / jpg / webp 都行，中文文件名也行）
-#    /root/workspace/plugins/dsh-pet/images/
+#    /opt/dsh/dsh-pet/images/
 # 2. 抠底 + 裁边 + 缩到 320px + 生成内联数据模块
 python3 scripts/import-lulu.py
 # 3. 重新打包
@@ -179,7 +181,7 @@ node scripts/build.mjs
 静态图能用，但它只会呼吸——想要眨眼、摆尾、摇晃这种「活」的感觉，就给动图。支持 gif、动态 webp，以及 mp4 / mov / webm 短片：
 
 ```bash
-python3 scripts/import-anim.py --in /root/workspace/plugins/dsh-pet/images/lulu-idle.gif --label 噜噜
+python3 scripts/import-anim.py --in /opt/dsh/dsh-pet/images/lulu-idle.gif --label 噜噜
 # 或短视频：--fps 12 --max-frames 16
 node scripts/build.mjs
 ```
@@ -207,7 +209,7 @@ node scripts/build.mjs
 
 ```bash
 # 绿幕 mp4 → assets/anim-<action>.webm（VP9 + alpha，画布 384×416）
-python3 scripts/video-to-webm.py --video /root/.hermes/cache/scratch/act/cheer.mp4 \
+python3 scripts/video-to-webm.py --video ~/.hermes/cache/scratch/act/cheer.mp4 \
     --action cheer --start 49 --frames 30
 node scripts/build.mjs
 ```
@@ -219,7 +221,7 @@ node scripts/build.mjs
 **回退：横向胶片条。** 浏览器不支持 alpha WebM、或解码失败时（错误记进 `state.videoBroken`，同一动作不再重试），自动退回横向 WebP + 逐帧 `background-position`：
 
 ```bash
-python3 scripts/video-to-clip.py --in /root/.hermes/cache/scratch/act/cheer.mp4 --action cheer --frames 12
+python3 scripts/video-to-clip.py --in ~/.hermes/cache/scratch/act/cheer.mp4 --action cheer --frames 12
 ```
 
 胶片条在 `PET_ACTION_CLIPS` 登记 `{ url, frameW, frameH, frames, stepMs }`，`setClip()` 挂 `data-clip` 后由 `steps(1,end)` 离散换帧 —— 和位图动作同一套机制。两条路都是「整只换姿势」，不是「噜噜身上叠一个道具」。
@@ -251,7 +253,7 @@ python3 scripts/video-to-clip.py --in /root/.hermes/cache/scratch/act/cheer.mp4 
 | 动图素材库 `images/lulu-anims` | 抖音图文作品（作者「碎个好觉」等）的循环短视频，`scripts/fetch-douyin.py` 抓流 → 480² 动图 + 原片；**只在本机自用，不进 bundle、不随插件分发** | 粉丝二创，未获授权，仅本地使用 |
 | 静图与壁纸 `images/lulu-stills` | 抖音图文作品原图（作者 ✨曜✨）、小红书壁纸笔记，原图归档；**只在本机自用，不进 bundle** | 粉丝二创，未获授权，仅本地使用 |
 
-（此前曾接入的布布 / 团团 / 像素鸭 / 咕咚 / 薄荷已移除，素材保留在 `/root/backups/dsh-pet-assets-removed-20261102/`，各自许可：MIT / MIT / MIT / CC BY 4.0 署名 `咕咚 by Rank` / MIT 署名 `Minty by Somnusochi`。）
+（此前曾接入的布布 / 团团 / 像素鸭 / 咕咚 / 薄荷已移除，素材保留在 `~/backups/dsh-pet-assets-removed-20261102/`，各自许可：MIT / MIT / MIT / CC BY 4.0 署名 `咕咚 by Rank` / MIT 署名 `Minty by Somnusochi`。）
 
 选集时在 [legeling/awesome-codex-pet](https://github.com/legeling/awesome-codex-pet)（370+ 只社区宠物索引，代码 MIT、画廊素材标注 CC BY-NC 4.0）里筛，**每只宠物的实际许可以它自己 `submission.json` 的 `license` 字段和上游仓库的 LICENSE 为准**，本项目只收 MIT / Apache-2.0 / CC BY 4.0 这类可再分发的（CC BY 只要求署名，商用也行）；NC、GPL、无许可、以及带第三方 IP 的同人角色一律不收。要换成别的宠物，用 `scripts/pack-sprite.mjs`（见「开发」）。
 
@@ -278,7 +280,7 @@ python3 scripts/video-to-clip.py --in /root/.hermes/cache/scratch/act/cheer.mp4 
 
 ```bash
 # 装（link: 依赖，改 client-src 后重新 build 再刷新页面即可生效，不需要重启服务）
-dsh plugin --profile web add /root/workspace/plugins/dsh-pet
+dsh plugin --profile web add /opt/dsh/dsh-pet
 
 # 卸载（同时清掉 profile 里的 bundle 条目）
 dsh plugin --profile web remove dsh-pet
@@ -287,7 +289,7 @@ dsh plugin --profile web remove dsh-pet
 装完打一次浏览器验收：
 
 ```bash
-cd /root/workspace/plugins/dsh-pet
+cd /opt/dsh/dsh-pet
 node scripts/verify-ui.mjs            # 自动从 journal 取本次启动的 launch token
 ```
 
